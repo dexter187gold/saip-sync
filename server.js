@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro – Sync Server v1.0.1
+ * SA Invoice Pro – Sync Server v1.0.2
  * Multi-device workspace sync + public status API for AutoResponder
  * Pure JS storage (no native modules) – works on Render free tier
  */
@@ -53,6 +53,7 @@ function persistStatus() { saveJson(STATUS_FILE, invoiceStatus); }
 // ─── Helpers ────────────────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 function now() {
   return new Date().toISOString();
@@ -84,6 +85,132 @@ function normalizePhone(p) {
   if (s.startsWith('0') && s.length === 10) s = '27' + s.slice(1);
   return s || null;
 }
+
+// ─── Mobile-friendly Register / Login pages ─────────────────────────────────
+const PAGE_CSS = `
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(160deg, #0f172a 0%, #0b3d2e 100%);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    color: #0f172a;
+  }
+  .card {
+    background: #fff; border-radius: 20px; width: 100%; max-width: 400px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.35); overflow: hidden;
+  }
+  .header {
+    background: #007A4D; color: #fff; padding: 28px 24px; text-align: center;
+  }
+  .header h1 { margin: 0 0 6px; font-size: 1.4rem; }
+  .header p { margin: 0; opacity: .9; font-size: .9rem; }
+  .body { padding: 24px; }
+  label { display: block; font-size: .8rem; font-weight: 600; color: #475569; margin-bottom: 4px; }
+  input {
+    width: 100%; padding: 14px 12px; margin-bottom: 14px; border: 1px solid #e2e8f0;
+    border-radius: 12px; font-size: 16px;
+  }
+  input:focus { outline: 2px solid #007A4D; border-color: #007A4D; }
+  button {
+    width: 100%; padding: 14px; border: 0; border-radius: 12px;
+    background: #007A4D; color: #fff; font-size: 1rem; font-weight: 700;
+    cursor: pointer; margin-top: 4px;
+  }
+  button:active { transform: scale(.98); }
+  .msg { margin-top: 14px; padding: 12px; border-radius: 10px; font-size: .9rem; display: none; }
+  .msg.ok { display: block; background: #ecfdf5; color: #065f46; }
+  .msg.err { display: block; background: #fef2f2; color: #991b1b; }
+  .switch { text-align: center; margin-top: 18px; font-size: .9rem; color: #64748b; }
+  .switch a { color: #007A4D; font-weight: 600; text-decoration: none; }
+`;
+
+function authPage({ title, subtitle, mode }) {
+  const isRegister = mode === 'register';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>${title} – SA Invoice Pro Sync</title>
+  <style>${PAGE_CSS}</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${title}</h1>
+      <p>${subtitle}</p>
+    </div>
+    <div class="body">
+      <form id="form">
+        ${isRegister ? '<label>Name (optional)</label><input id="name" type="text" placeholder="Your name" autocomplete="name"/>' : ''}
+        <label>Email</label>
+        <input id="email" type="email" placeholder="you@example.com" required autocomplete="email"/>
+        <label>Password (min 6 characters)</label>
+        <input id="password" type="password" placeholder="••••••••" required minlength="6" autocomplete="${isRegister ? 'new-password' : 'current-password'}"/>
+        <button type="submit">${isRegister ? 'Create Account' : 'Login'}</button>
+      </form>
+      <div id="msg" class="msg"></div>
+      <div class="switch">
+        ${isRegister
+          ? 'Already have an account? <a href="/login">Login</a>'
+          : 'No account yet? <a href="/register">Register</a>'}
+      </div>
+    </div>
+  </div>
+  <script>
+    const form = document.getElementById('form');
+    const msg = document.getElementById('msg');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.className = 'msg';
+      msg.textContent = 'Please wait…';
+      msg.style.display = 'block';
+      const payload = {
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value
+      };
+      ${isRegister ? 'payload.name = document.getElementById("name").value.trim() || undefined;' : ''}
+      try {
+        const res = await fetch('/api/auth/${isRegister ? 'register' : 'login'}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok) {
+          msg.className = 'msg ok';
+          msg.innerHTML = '✅ <strong>Success!</strong><br>Email: ' + data.user.email +
+            '<br><br>You can now close this page and use these details in SA Invoice Pro.';
+          form.reset();
+        } else {
+          msg.className = 'msg err';
+          msg.textContent = '❌ ' + (data.error || 'Something went wrong');
+        }
+      } catch (err) {
+        msg.className = 'msg err';
+        msg.textContent = '❌ Network error: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
+app.get('/register', (req, res) => {
+  res.type('html').send(authPage({
+    title: 'Create Account',
+    subtitle: 'SA Invoice Pro Cloud Sync',
+    mode: 'register',
+  }));
+});
+
+app.get('/login', (req, res) => {
+  res.type('html').send(authPage({
+    title: 'Login',
+    subtitle: 'SA Invoice Pro Cloud Sync',
+    mode: 'login',
+  }));
+});
 
 // ─── Auth routes ────────────────────────────────────────────────────────────
 app.post('/api/auth/register', (req, res) => {
@@ -171,7 +298,6 @@ app.put('/api/workspace', auth, (req, res) => {
   };
   persistWorkspaces();
 
-  // Keep invoice_status in sync
   syncInvoiceStatus(req.user.id, data);
 
   res.json({ ok: true, version: newVersion, updated_at: ts });
@@ -246,7 +372,6 @@ app.get('/api/status/invoice', statusAuth, (req, res) => {
   const number = (req.query.number || '').trim().toUpperCase();
   if (!number) return res.status(400).json({ error: 'number required' });
 
-  // Find the most recently updated matching invoice across all users
   const matches = Object.values(invoiceStatus)
     .filter(r => r.invoice_number === number)
     .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
@@ -301,8 +426,9 @@ app.get('/api/status/client', statusAuth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '1.0.1',
+    version: '1.0.2',
     storage: 'json-file',
+    pages: ['/register', '/login'],
     endpoints: {
       auth: ['POST /api/auth/register', 'POST /api/auth/login', 'GET /api/auth/me'],
       workspace: ['GET /api/workspace', 'PUT /api/workspace'],
@@ -315,6 +441,6 @@ app.get('/health', (req, res) => res.json({ ok: true, ts: now() }));
 
 // ─── Start ──────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.0.1 listening on port ${PORT}`);
+  console.log(`SAIP Sync v1.0.2 listening on port ${PORT}`);
   console.log(`Status token starts with: ${STATUS_TOKEN.slice(0, 6)}…`);
 });
