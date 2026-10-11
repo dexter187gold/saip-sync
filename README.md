@@ -1,6 +1,8 @@
-# SA Invoice Pro – Sync Server
+# SA Invoice Pro – Sync Server v1.0.1
 
 Multi-device workspace sync + public status API for AutoResponder.
+
+**v1.0.1** – Switched to pure JSON file storage (no native modules). Works reliably on Render free tier.
 
 ## Quick start (local)
 
@@ -13,30 +15,36 @@ npm start
 
 Server runs on `http://localhost:3847` by default.
 
-## Deploy (Render – recommended)
+## Deploy on Render
 
-1. Create a new **Web Service** on Render
-2. Connect this repo
-3. Build command: `npm install`
-4. Start command: `npm start`
-5. Add environment variables:
-   - `JWT_SECRET` → long random string
-   - `STATUS_API_TOKEN` → long random string (give this to AutoResponder)
-   - `PORT` → leave default (Render sets it)
+1. Create a new **Web Service** → connect this repo
+2. **Runtime:** Node
+3. **Build Command:** `npm install`
+4. **Start Command:** `npm start`
+5. Environment variables (required):
+
+```
+JWT_SECRET=your-long-random-secret-here
+STATUS_API_TOKEN=your-status-token-for-autoresponder
+```
+
+Node version is pinned to **20.x** via `engines` and `.node-version`.
+
+After deploy, copy the public URL (e.g. `https://saip-sync-xxxx.onrender.com`).
 
 ## API Overview
 
 ### Auth
-- `POST /api/auth/register` `{ email, password, name? }`
-- `POST /api/auth/login` `{ email, password }` → returns JWT
+- `POST /api/auth/register` `{ "email", "password", "name?" }`
+- `POST /api/auth/login` `{ "email", "password" }` → JWT
 - `GET  /api/auth/me` (Bearer token)
 
 ### Workspace (multi-device)
 - `GET  /api/workspace` → pull full data
-- `PUT  /api/workspace` `{ data: { clients, invoices, tickets, settings } }`
+- `PUT  /api/workspace` `{ "data": { clients, invoices, tickets, settings } }`
 
 ### Status (for AutoResponder)
-All status endpoints require `?token=YOUR_STATUS_API_TOKEN`
+Require `?token=YOUR_STATUS_API_TOKEN`
 
 - `GET /api/status/invoice?number=INV-0042&token=...`
 - `GET /api/status/client?phone=27821234567&token=...`
@@ -44,4 +52,4 @@ All status endpoints require `?token=YOUR_STATUS_API_TOKEN`
 
 ## Frontend integration
 
-See `FRONTEND_INTEGRATION.md` for the exact changes needed in sa-invoice-pro.
+See `FRONTEND_INTEGRATION.md`.
