@@ -1,7 +1,8 @@
 /**
- * AutoResponder brain v2.1
+ * AutoResponder brain v2.1.1
  * Fixes: registration when AR only sends contact NAME (no phone digits)
  * Rich client form + flexible field parsing
+ * Incomplete REGISTER no longer falls through to menu
  */
 
 function moneyR(n) {
@@ -14,9 +15,7 @@ function normalizePhone(p) {
   if (!p) return null;
   let s = String(p).replace(/\D/g, '');
   if (!s) return null;
-  // SA local 0xxxxxxxxx → 27xxxxxxxxx
   if (s.startsWith('0') && s.length === 10) s = '27' + s.slice(1);
-  // strip long junk but keep 27 + 9 digits
   if (s.startsWith('27') && s.length > 11) s = s.slice(0, 11);
   if (s.length < 9 || s.length > 15) return null;
   return s;
@@ -39,7 +38,6 @@ function extractPhoneFromMessage(text) {
       if (p) return p;
     }
   }
-  // bare SA number in message
   const bare = String(text).match(/(?:\+27|27|0)\s*\d[\d\s\-]{7,}\d/);
   if (bare) return normalizePhone(bare[0]);
   return null;
@@ -54,8 +52,6 @@ function extractPhoneFromBody(data, req) {
     extractPhoneFromSender(q.sender || data.sender || '') ||
     normalizePhone(q.senderNumber || q.phone || q.from || data.phone || data.from || '') ||
     extractPhoneFromMessage(q.message || data.message || '');
-
-  // Deep scan whole JSON for phone-like values (last resort)
   if (!phone) {
     try {
       const blob = JSON.stringify(data);
@@ -75,14 +71,7 @@ function reply(messages) {
 
 function parseClientForm(text) {
   const fields = {
-    name: '',
-    email: '',
-    company: '',
-    address: '',
-    city: '',
-    phone: null,
-    vat: '',
-    notes: '',
+    name: '', email: '', company: '', address: '', city: '', phone: null, vat: '', notes: '',
   };
   for (const line of String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
     if (/^register$/i.test(line)) continue;
@@ -101,28 +90,20 @@ function parseClientForm(text) {
 
 function looksLikeClientForm(msg) {
   const t = String(msg || '');
-  if (/register/i.test(t) && /name\s*[:\-]/i.test(t)) return true;
-  // Name + Email without REGISTER keyword
+  // Any REGISTER keyword → treat as form (even incomplete)
+  if (/\bregister\b/i.test(t)) return true;
+  // Field pairs without REGISTER
   if (/name\s*[:\-]/i.test(t) && (/email\s*[:\-]/i.test(t) || /company\s*[:\-]/i.test(t) || /phone\s*[:\-]/i.test(t))) return true;
+  if (/phone\s*[:\-]/i.test(t) && (/email\s*[:\-]/i.test(t) || /name\s*[:\-]/i.test(t))) return true;
   return false;
 }
 
 function mountArBrain(app, ctx) {
   const {
-    waClients,
-    workspaces,
-    invoiceStatus,
-    ticketsIntake,
-    persistTickets,
-    persistWaClients,
-    pushNotification,
-    now,
-    uuidv4,
-    ALLOWED_STATUS_TOKENS,
-    DEFAULT_STATUS_TOKEN,
-    getPayConfig,
-    onHumanRequest,
-    onQuoteAction,
+    waClients, workspaces, invoiceStatus, ticketsIntake,
+    persistTickets, persistWaClients, pushNotification, now, uuidv4,
+    ALLOWED_STATUS_TOKENS, DEFAULT_STATUS_TOKEN, getPayConfig,
+    onHumanRequest, onQuoteAction,
   } = ctx;
 
   let lastDebug = null;
@@ -197,7 +178,6 @@ function mountArBrain(app, ctx) {
     ].filter(Boolean);
   }
 
-  /** Full interactive registration form */
   function registerGate(needPhone) {
     const lines = [
       '📝 *Client registration*',
@@ -257,63 +237,48 @@ function mountArBrain(app, ctx) {
     const f = parseClientForm(text);
     const phone = f.phone || phoneFromChat;
 
-    if (!phone) {
-      return registerGate(true);
-    }
+    if (!phone) return registerGate(true);
     if (!f.name || f.name.length < 2) {
-      return [
-        'Almost there — *Name* is required.',
-        '',
-        registerGate(!phoneFromChat),
-      ].join('\n');
+      return ['Almost there — *Name* is required.', '', registerGate(!phoneFromChat)].join('\n');
     }
 
     const existing = waClients[phone];
     const isNew = !existing || !existing.registered;
     waClients[phone] = {
-      id: existing?.id || uuidv4(),
-      phone,
-      name: f.name,
+      id: existing?.id || uuidv4(), phone, name: f.name,
       email: f.email || existing?.email || null,
       company: f.company || existing?.company || null,
       address: f.address || existing?.address || null,
       city: f.city || existing?.city || null,
       vat: f.vat || existing?.vat || null,
       notes: f.notes || existing?.notes || null,
-      source: 'whatsapp_register',
-      registered: true,
+      source: 'whatsapp_register', registered: true,
       linked_client_id: existing?.linked_client_id || null,
       owner_user_id: existing?.owner_user_id || null,
-      created_at: existing?.created_at || now(),
-      updated_at: now(),
+      created_at: existing?.created_at || now(), updated_at: now(),
       pending_import: isNew || !existing?.linked_client_id,
     };
     persistWaClients();
 
     if (isNew || waClients[phone].pending_import) {
       pushNotification({
-        type: 'wa_client_new',
-        title: 'New WhatsApp client',
-        body: `${f.name} registered (${phone})`,
-        payload: { ...waClients[phone] },
+        type: 'wa_client_new', title: 'New WhatsApp client',
+        body: `${f.name} registered (${phone})`, payload: { ...waClients[phone] },
       });
     }
 
     return [
       isNew ? '✅ *Profile created successfully!*' : '✅ *Profile updated*',
-      '',
-      '👤 ' + f.name,
+      '', '👤 ' + f.name,
       f.email ? '📧 ' + f.email : null,
       f.company ? '🏢 ' + f.company : null,
       f.address ? '📍 ' + f.address : null,
       f.city ? '🏙 ' + f.city : null,
       f.vat ? '🧾 VAT: ' + f.vat : null,
       '📱 ' + phone,
-      '',
-      'You are now *registered*.',
+      '', 'You are now *registered*.',
       'Try: *2* invoices · *3* payment · *menu*',
-      '',
-      '0️⃣ Menu',
+      '', '0️⃣ Menu',
     ].filter(Boolean).join('\n');
   }
 
@@ -387,7 +352,6 @@ function mountArBrain(app, ctx) {
   function route(phone, message) {
     const msg = String(message || '').trim();
 
-    // Client form (REGISTER or Name:+Email:)
     if (looksLikeClientForm(msg)) return handleRegister(phone, msg);
 
     if (/\bJOB\b/i.test(msg) && (/device\s*[:\-]/i.test(msg) || /issue\s*[:\-]/i.test(msg))) {
@@ -532,8 +496,8 @@ function mountArBrain(app, ctx) {
     res.json({
       ok: true,
       name: 'SAIP AutoResponder Brain',
-      version: '2.1.0',
-      fix: 'REGISTER requires Phone: when WhatsApp contact name has no digits',
+      version: '2.1.1',
+      fix: 'Incomplete REGISTER no longer falls through to menu; Phone required when undetected',
       usage: 'Connect your web server → POST this URL',
     });
   });
