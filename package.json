@@ -1,7 +1,7 @@
 {
   "name": "saip-sync",
-  "version": "1.0.1",
-  "description": "SA Invoice Pro – multi-device sync + public status API",
+  "version": "3.3.0",
+  "description": "SA Invoice Pro – multi-device sync + AR brain + admin portal",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
