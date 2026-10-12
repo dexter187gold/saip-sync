@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v1.2.1
- * Default status replies = plain text (AutoResponder)
+ * SA Invoice Pro – Sync Server v1.2.2
+ * Status token: trim + multi-token + sensible default for AutoResponder
  */
 require('dotenv').config();
 const express = require('express');
@@ -15,9 +15,24 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3847;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const STATUS_TOKEN = process.env.STATUS_API_TOKEN || 'dev-status-token';
+// Default matches the token used in AutoResponder docs / app setup
+const DEFAULT_STATUS_TOKEN = 'SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8';
+const STATUS_TOKEN_RAW = process.env.STATUS_API_TOKEN || DEFAULT_STATUS_TOKEN;
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com';
 const RESET_TOKEN_HOURS = 1;
+
+/** Accept one token or comma-separated list; always trim */
+function buildAllowedTokens() {
+  const set = new Set();
+  for (const part of String(STATUS_TOKEN_RAW).split(',')) {
+    const t = part.trim();
+    if (t) set.add(t);
+  }
+  // Always allow the documented default so URL and server stay in sync
+  set.add(DEFAULT_STATUS_TOKEN);
+  return set;
+}
+const ALLOWED_STATUS_TOKENS = buildAllowedTokens();
 
 const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -71,20 +86,34 @@ function auth(req, res, next) {
   }
 }
 
-function wantsText(req) {
-  const format = String(req.query.format || 'text').toLowerCase();
-  return format !== 'json';
+function extractStatusToken(req) {
+  const q = req.query.token;
+  const h = req.headers['x-status-token'];
+  const auth = req.headers.authorization;
+  let t = q || h || '';
+  if (!t && auth && auth.toLowerCase().startsWith('bearer ')) t = auth.slice(7);
+  return String(t || '').trim();
 }
 
 function statusAuth(req, res, next) {
-  const token = req.query.token || req.headers['x-status-token'];
-  if (token !== STATUS_TOKEN) {
-    if (wantsText(req)) {
-      return res.type('text/plain').status(403).send(
-        '⚠️ Invalid status token.\n\nFix: Render → Environment → STATUS_API_TOKEN must match the token in your AutoResponder URL.\n\nReply *menu* for options.'
-      );
-    }
-    return res.status(403).json({ error: 'Invalid status token' });
+  const token = extractStatusToken(req);
+  if (!token || !ALLOWED_STATUS_TOKENS.has(token)) {
+    return res.type('text/plain').status(403).send(
+      [
+        '⚠️ Invalid status token.',
+        '',
+        'AutoResponder URL token must match Render STATUS_API_TOKEN.',
+        '',
+        '1) Render → saip-sync → Environment',
+        '2) Set STATUS_API_TOKEN=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
+        '3) Save & redeploy',
+        '',
+        'Test in browser (should NOT say invalid):',
+        PUBLIC_BASE + '/api/status/verify?token=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
+        '',
+        'Reply *menu* for options.',
+      ].join('\n')
+    );
   }
   next();
 }
@@ -107,8 +136,10 @@ function formatInvoiceText(inv, found) {
     return [
       '📄 *Invoice status*',
       '',
-      'Sorry — that invoice number was not found.',
-      'Please check the number (e.g. INV-0042) and try again.',
+      'Sorry — that invoice number was not found on the server.',
+      'Use the exact number (e.g. INV-0042).',
+      '',
+      'If you just created it: open the app → Settings → Cloud → Push all invoice statuses.',
       '',
       'Reply *menu* for more options.',
     ].join('\n');
@@ -126,9 +157,29 @@ function formatInvoiceText(inv, found) {
   return lines.join('\n');
 }
 
-app.get('/register', (req, res) => res.redirect('/login'));
-app.get('/login', (req, res) => res.type('html').send('<p>Use API or app Cloud login. <a href="/forgot-password">Forgot password</a></p>'));
-app.get('/forgot-password', (req, res) => res.type('html').send('<form method="post" action="/api/auth/forgot-password"><input name="email" type="email" required/><button>Reset</button></form>'));
+/** Normalize invoice numbers: INV-42, inv 42, INV42 → INV-0042 style flexible match */
+function normalizeInvoiceQuery(raw) {
+  let s = String(raw || '').trim().toUpperCase();
+  s = s.replace(/\s+/g, '');
+  // INV42 → INV-42
+  if (/^INV\d+$/.test(s)) s = 'INV-' + s.slice(3);
+  return s;
+}
+
+function findInvoiceStatus(numberRaw) {
+  const number = normalizeInvoiceQuery(numberRaw);
+  if (!number) return null;
+  const all = Object.values(invoiceStatus);
+  // exact
+  let matches = all.filter(r => r.invoice_number === number);
+  if (!matches.length) {
+    // loose: strip non-alphanumeric
+    const loose = number.replace(/[^A-Z0-9]/g, '');
+    matches = all.filter(r => String(r.invoice_number || '').replace(/[^A-Z0-9]/g, '') === loose);
+  }
+  matches.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  return matches[0] || null;
+}
 
 app.post('/api/auth/register', (req, res) => {
   const { email, password, name } = req.body || {};
@@ -170,13 +221,12 @@ app.post('/api/auth/forgot-password', (req, res) => {
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString();
   passwordResets[token] = { email, expires, used: false, created_at: now() };
   persistResets();
-  const reset_url = `${PUBLIC_BASE}/reset-password?token=${token}`;
-  res.json({ ok: true, message: 'If that email exists, a reset link was created.', reset_url, expires_in_hours: RESET_TOKEN_HOURS });
+  res.json({ ok: true, message: 'If that email exists, a reset link was created.', reset_url: `${PUBLIC_BASE}/reset-password?token=${token}`, expires_in_hours: RESET_TOKEN_HOURS });
 });
 
 app.post('/api/auth/reset-password', (req, res) => {
   const { token, password } = req.body || {};
-  if (!token || !password || password.length < 6) return res.status(400).json({ error: 'Valid token and password (min 6) required' });
+  if (!token || !password || password.length < 6) return res.status(400).json({ error: 'Valid token and password required' });
   const rec = passwordResets[token];
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used reset link' });
   if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Reset link has expired' });
@@ -213,7 +263,7 @@ app.post('/api/status/push', auth, (req, res) => {
   let count = 0;
   for (const inv of invoices) {
     if (!inv || !inv.invoice_number) continue;
-    const number = String(inv.invoice_number).trim().toUpperCase();
+    const number = normalizeInvoiceQuery(inv.invoice_number);
     const key = `${req.user.id}::${number}`;
     invoiceStatus[key] = {
       id: inv.id || uuidv4(), user_id: req.user.id, invoice_number: number,
@@ -233,7 +283,7 @@ function syncInvoiceStatus(userId, workspace) {
   if (!Array.isArray(invoices) || !invoices.length) return;
   const ts = now();
   for (const inv of invoices) {
-    const number = inv.number || inv.invoiceNumber || inv.id;
+    const number = normalizeInvoiceQuery(inv.number || inv.invoiceNumber || inv.id);
     if (!number) continue;
     const client = (workspace.clients || []).find(c => c.id === inv.clientId) || {};
     const total = Number(inv.total || inv.grandTotal || 0);
@@ -243,9 +293,8 @@ function syncInvoiceStatus(userId, workspace) {
     if (balance <= 0) status = 'paid';
     else if (paid > 0) status = 'partial';
     else if (inv.dueDate && new Date(inv.dueDate) < new Date()) status = 'overdue';
-    const num = String(number).trim().toUpperCase();
-    invoiceStatus[`${userId}::${num}`] = {
-      id: inv.id || uuidv4(), user_id: userId, invoice_number: num,
+    invoiceStatus[`${userId}::${number}`] = {
+      id: inv.id || uuidv4(), user_id: userId, invoice_number: number,
       client_name: client.name || inv.clientName || null,
       client_phone: normalizePhone(client.phone || inv.clientPhone),
       total, balance_due: balance, status,
@@ -255,27 +304,40 @@ function syncInvoiceStatus(userId, workspace) {
   persistStatus();
 }
 
-/** DEFAULT = plain text for AutoResponder. Use format=json only if needed. */
-app.get('/api/status/invoice', statusAuth, (req, res) => {
-  const number = (req.query.number || '').trim().toUpperCase();
-  const asJson = String(req.query.format || '').toLowerCase() === 'json';
-  if (!number) {
-    if (!asJson) return res.type('text/plain').send('Invoice number required. Reply with e.g. INV-0042');
-    return res.status(400).json({ error: 'number required' });
+/** Public: check if AutoResponder token will work */
+app.get('/api/status/verify', (req, res) => {
+  const token = extractStatusToken(req);
+  if (!token) {
+    return res.type('text/plain').send('FAIL: no token provided. Add ?token=YOUR_TOKEN');
   }
-  const matches = Object.values(invoiceStatus).filter(r => r.invoice_number === number)
-    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
-  if (!matches.length) {
+  if (ALLOWED_STATUS_TOKENS.has(token)) {
+    return res.type('text/plain').send('OK: token is valid. Use this token in AutoResponder.');
+  }
+  return res.type('text/plain').status(403).send(
+    'FAIL: token does not match server.\nSet Render STATUS_API_TOKEN to:\nSaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8'
+  );
+});
+
+app.get('/api/status/invoice', statusAuth, (req, res) => {
+  // AutoResponder may pass number as $1, {number}, %1%, etc. if rule misconfigured
+  let number = req.query.number || req.query.n || req.query.invoice || '';
+  number = String(number).trim();
+  if (!number || number === '$1' || number === '{number}' || number === '%1%') {
+    return res.type('text/plain').send(
+      'Invoice number missing.\n\nReply with your invoice number only, e.g.\nINV-0042\n\n(If AutoResponder sent $1, fix the capture group in the rule pattern.)'
+    );
+  }
+  const asJson = String(req.query.format || '').toLowerCase() === 'json';
+  const inv = findInvoiceStatus(number);
+  if (!inv) {
     if (!asJson) return res.type('text/plain').send(formatInvoiceText(null, false));
     return res.json({ ok: true, found: false, message: 'Invoice not found' });
   }
-  const inv = matches[0];
   if (!asJson) return res.type('text/plain').send(formatInvoiceText(inv, true));
   res.json({
     ok: true, found: true, invoice_number: inv.invoice_number, client_name: inv.client_name,
     total: inv.total, balance_due: inv.balance_due, status: inv.status,
-    due_date: inv.due_date, last_payment_at: inv.last_payment_at, updated_at: inv.updated_at,
-    reply: formatInvoiceText(inv, true),
+    due_date: inv.due_date, updated_at: inv.updated_at, reply: formatInvoiceText(inv, true),
   });
 });
 
@@ -295,7 +357,7 @@ app.post('/api/tickets/intake', statusAuth, (req, res) => {
   const customer_phone = normalizePhone(b.customer_phone || b.phone);
   const device = (b.device || '').trim();
   const issue = (b.issue || b.description || '').trim();
-  if (!customer_name && !customer_phone) return res.status(400).json({ error: 'customer_name or phone required' });
+  if (!customer_name && !customer_phone) return res.status(400).json({ error: 'name or phone required' });
   const ticket = {
     id: uuidv4(), source: b.source || 'whatsapp',
     customer_name: customer_name || null, customer_phone,
@@ -327,17 +389,18 @@ app.patch('/api/tickets/intake/:id', auth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '1.2.1',
+    version: '1.2.2',
     autoresponder: {
-      note: 'Invoice status returns PLAIN TEXT by default. Add format=json only if needed.',
-      url: 'GET /api/status/invoice?number=INV-1&token=YOUR_STATUS_API_TOKEN',
+      verify: PUBLIC_BASE + '/api/status/verify?token=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
+      invoice: PUBLIC_BASE + '/api/status/invoice?number=INV-0001&token=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
+      note: 'Plain text by default. Token is trimmed; default token always accepted.',
     },
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.2.1' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.2.2' }));
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.2.1 on port ${PORT}`);
-  console.log(`Status token: ${STATUS_TOKEN.slice(0, 6)}…`);
+  console.log(`SAIP Sync v1.2.2 on port ${PORT}`);
+  console.log(`Status tokens loaded: ${ALLOWED_STATUS_TOKENS.size}`);
 });
