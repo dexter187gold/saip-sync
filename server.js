@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v2.0.0
- * Q1 AR brain · Q2 pay/reminders · Q3 inbox · Q4 quotes · portal
+ * SA Invoice Pro – Sync Server v3.0.0
+ * Full Q1–Q10 competitive stack
  */
 require('dotenv').config();
 const express = require('express');
@@ -15,6 +15,7 @@ const { mountPortal } = require('./portal');
 const { mountWaFlow } = require('./wa-flow');
 const { mountArBrain } = require('./ar-brain');
 const { mountQuarters } = require('./quarters');
+const { mountQuartersLate } = require('./quarters-late');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -336,14 +337,25 @@ app.get('/api/wa/pending', auth, (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SA Invoice Pro Sync', version: '2.0.0', features: ['ar_brain_v2', 'quarters_q2_q4', 'client_portal'], ar: PUBLIC_BASE + '/api/ar' });
+  res.json({
+    name: 'SA Invoice Pro Sync',
+    version: '3.0.0',
+    features: ['ar_brain_v2', 'q1_q10_complete', 'client_portal', 'cloud_api_dual_stub'],
+    ar: PUBLIC_BASE + '/api/ar',
+    quarters: PUBLIC_BASE + '/api/quarters',
+  });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '2.0.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.0.0' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
 const quartersApi = mountQuarters(app, {
+  DATA_DIR, loadJson, saveJson, workspaces, invoiceStatus, waClients,
+  auth, statusAuth, now, pushNotification, PUBLIC_BASE,
+});
+
+mountQuartersLate(app, {
   DATA_DIR, loadJson, saveJson, workspaces, invoiceStatus, waClients,
   auth, statusAuth, now, pushNotification, PUBLIC_BASE,
 });
@@ -361,5 +373,5 @@ mountWaFlow(app, {
 });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v2.0.0 on port ${PORT}`);
+  console.log(`SAIP Sync v3.0.0 on port ${PORT}`);
 });
