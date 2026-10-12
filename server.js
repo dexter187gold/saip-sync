@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v3.0.0
- * Full Q1–Q10 competitive stack
+ * SA Invoice Pro – Sync Server v3.1.0
+ * Multi-step WA forms · online register/job · Q1–Q10
  */
 require('dotenv').config();
 const express = require('express');
@@ -16,6 +16,7 @@ const { mountWaFlow } = require('./wa-flow');
 const { mountArBrain } = require('./ar-brain');
 const { mountQuarters } = require('./quarters');
 const { mountQuartersLate } = require('./quarters-late');
+const { mountFlows } = require('./flows');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -339,14 +340,17 @@ app.get('/api/wa/pending', auth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '3.0.0',
-    features: ['ar_brain_v2', 'q1_q10_complete', 'client_portal', 'cloud_api_dual_stub'],
+    version: '3.1.0',
+    features: ['multi_step_forms', 'online_forms', 'ar_brain_v2.2', 'q1_q10'],
     ar: PUBLIC_BASE + '/api/ar',
-    quarters: PUBLIC_BASE + '/api/quarters',
+    forms: {
+      register: PUBLIC_BASE + '/forms/register',
+      job: PUBLIC_BASE + '/forms/job',
+    },
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.0.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.1.0' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
@@ -360,11 +364,18 @@ mountQuartersLate(app, {
   auth, statusAuth, now, pushNotification, PUBLIC_BASE,
 });
 
+const flowsApi = mountFlows(app, {
+  DATA_DIR, loadJson, saveJson, waClients, persistWaClients,
+  ticketsIntake, persistTickets, pushNotification, now, PUBLIC_BASE,
+});
+
 mountArBrain(app, {
   waClients, workspaces, invoiceStatus, ticketsIntake,
   persistTickets, persistWaClients, pushNotification, now, uuidv4,
   ALLOWED_STATUS_TOKENS, DEFAULT_STATUS_TOKEN,
   getPayConfig: () => quartersApi.getPayConfig(),
+  flows: flowsApi,
+  PUBLIC_BASE,
 });
 
 mountWaFlow(app, {
@@ -373,5 +384,5 @@ mountWaFlow(app, {
 });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v3.0.0 on port ${PORT}`);
+  console.log(`SAIP Sync v3.1.0 on port ${PORT}`);
 });
