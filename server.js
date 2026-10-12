@@ -1,6 +1,8 @@
 /**
- * SA Invoice Pro – Sync Server v3.3.0
- * Admin portal · brain-engine · forms · Q1–Q10
+ * SA Invoice Pro – Sync Server v4.0.0
+ * World Domination Mega Pack · Pinky & the Brain Edition
+ * "The same thing we do every night, Pinky — try to take over the world!"
+ * Admin portal · brain-engine · forms · Q1–Q10 · polished UI
  */
 require('dotenv').config();
 const express = require('express');
@@ -346,18 +348,20 @@ app.get('/api/wa/pending', auth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '3.3.0',
-    features: ['admin_portal', 'brain_engine_v3', 'multi_step_flows', 'online_forms', 'q1_q10'],
+    version: '4.0.0',
+    codename: 'World Domination Mega Pack · Pinky & the Brain',
+    features: ['admin_portal_v4', 'brain_engine_v4', 'multi_step_flows', 'online_forms_polished', 'q1_q10', 'client_portal'],
     ar: PUBLIC_BASE + '/api/ar',
     admin: PUBLIC_BASE + '/admin',
     forms: {
       register: PUBLIC_BASE + '/forms/register',
       job: PUBLIC_BASE + '/forms/job',
     },
+    quote: 'The same thing we do every night, Pinky — try to take over the world!',
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.3.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '4.0.0', theme: 'pinky-and-the-brain' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
@@ -414,5 +418,6 @@ mountAdmin(app, {
 });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v3.3.0 on port ${PORT}`);
+  console.log(`SAIP Sync v4.0.0 World Domination Mega Pack on port ${PORT}`);
+  console.log(`Narf! The same thing we do every night — try to take over the world.`);
 });
