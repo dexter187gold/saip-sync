@@ -1,6 +1,8 @@
 /**
- * SA Invoice Pro – Admin Portal
- * SME control: users, password reset, delete, WA clients, tickets, ops
+ * SA Invoice Pro – Admin Portal v4.0.0
+ * "Brain's Acme Labs Control Center"
+ * Theme: Pinky and the Brain · Try to take over the (SME) world
+ * Narf! This is not a plan to take over the world... or is it?
  */
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -57,7 +59,7 @@ function mountAdmin(app, ctx) {
     }
   }
 
-  // ——— APIs ———
+  // ——— APIs (unchanged functional core – the plan remains sound) ———
 
   app.get('/api/admin/me', adminAuth, (req, res) => {
     res.json({
@@ -140,7 +142,6 @@ function mountAdmin(app, ctx) {
     }
     const emailKey = String(user.email).toLowerCase();
     delete users[emailKey];
-    // also try id-keyed if any
     for (const k of Object.keys(users)) {
       if (users[k].id === user.id) delete users[k];
     }
@@ -222,79 +223,88 @@ function mountAdmin(app, ctx) {
     res.json({ ok: true });
   });
 
-  // ——— HTML Portal ———
+  // ——— HTML Portal – Brain's Acme Labs Control Center ———
   app.get('/admin', (req, res) => {
     res.type('html').send(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Admin · SA Invoice Pro</title>
+<title>Brain's Control Lab · SA Invoice Pro</title>
 <style>
-:root{--bg:#0b1220;--card:#141c2e;--line:#243049;--text:#e8eefc;--muted:#8b9bb8;--accent:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--danger:#ef4444}
+:root{
+  --bg:#0c0a14; --card:#16122a; --line:#2a2448; --text:#f0e6ff; --muted:#a89bc8;
+  --accent:#e879f9; --accent2:#a78bfa; --ok:#34d399; --warn:#fbbf24; --danger:#f87171;
+  --pinky:#f9a8d4; --brain:#c4b5fd;
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;background-image:radial-gradient(ellipse at top,#1e1035 0%,var(--bg) 60%)}
 .wrap{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:1.4rem;margin:0 0 4px}
+h1{font-size:1.45rem;margin:0 0 4px;background:linear-gradient(90deg,var(--pinky),var(--brain));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .sub{color:var(--muted);font-size:.9rem;margin:0 0 20px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 8px 32px rgba(0,0,0,.35)}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
-.stat{background:#0f172a;border-radius:12px;padding:14px;border:1px solid var(--line)}
-.stat b{display:block;font-size:1.35rem}
-.stat span{color:var(--muted);font-size:.75rem}
+.stat{background:#0f0b1e;border-radius:14px;padding:14px;border:1px solid var(--line);transition:transform .15s}
+.stat:hover{transform:translateY(-2px);border-color:var(--accent)}
+.stat b{display:block;font-size:1.4rem;color:var(--pinky)}
+.stat span{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
 input,select,button,textarea{font:inherit}
-input,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0f172a;color:var(--text);margin:6px 0 10px}
-button{cursor:pointer;border:none;border-radius:10px;padding:10px 14px;font-weight:600}
-.btn{background:var(--accent);color:#fff}
-.btn-danger{background:var(--danger);color:#fff}
+input,select{width:100%;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:#0f0b1e;color:var(--text);margin:6px 0 10px}
+input:focus{outline:none;border-color:var(--accent)}
+button{cursor:pointer;border:none;border-radius:12px;padding:10px 14px;font-weight:600}
+.btn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a0533}
+.btn-danger{background:var(--danger);color:#1a0533}
 .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
 .btn-ok{background:var(--ok);color:#052e16}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 table{width:100%;border-collapse:collapse;font-size:.85rem}
-th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--muted);font-weight:600}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.7rem;background:#1e293b}
-.badge.admin{background:#1d4ed8}
-.badge.user{background:#334155}
+th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em}
+.badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:.7rem;background:#1e1a35}
+.badge.admin{background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff}
+.badge.user{background:#2e2648}
 .hidden{display:none}
-#toast{position:fixed;bottom:16px;right:16px;background:#1e293b;border:1px solid var(--line);padding:12px 16px;border-radius:12px;display:none;z-index:50;max-width:320px}
-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.tab{background:#0f172a;border:1px solid var(--line);color:var(--muted);padding:8px 12px;border-radius:999px;cursor:pointer}
-.tab.on{color:#fff;border-color:var(--accent);background:#172554}
-.login-box{max-width:400px;margin:60px auto}
+#toast{position:fixed;bottom:18px;right:18px;background:#1e1a35;border:1px solid var(--accent);padding:13px 17px;border-radius:14px;display:none;z-index:50;max-width:340px;box-shadow:0 8px 24px rgba(232,121,249,.25)}
+.tab{background:#0f0b1e;border:1px solid var(--line);color:var(--muted);padding:9px 14px;border-radius:999px;cursor:pointer;transition:all .15s}
+.tab.on{color:#fff;border-color:var(--accent);background:linear-gradient(135deg,#2e1065,#4a044e)}
+.login-box{max-width:420px;margin:70px auto}
+.narf{font-size:.75rem;color:var(--pinky);opacity:.8;margin-top:8px}
+.hero-quote{font-style:italic;color:var(--muted);font-size:.85rem;border-left:3px solid var(--accent);padding-left:12px;margin:12px 0 0}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div id="loginView" class="login-box card">
-    <h1>Admin portal</h1>
-    <p class="sub">SA Invoice Pro · SME control centre</p>
+    <h1>🧠 Brain's Control Lab</h1>
+    <p class="sub">Acme Labs · SA Invoice Pro · World Domination Edition</p>
+    <p class="hero-quote">"Pinky, are you pondering what I'm pondering?"<br/>"I think so, Brain, but how will we take over the invoicing world with only one admin login?"</p>
     <label>Email</label>
     <input id="email" type="email" placeholder="admin@email.com" autocomplete="username"/>
     <label>Password</label>
     <input id="password" type="password" placeholder="••••••••" autocomplete="current-password"/>
-    <button class="btn" style="width:100%" onclick="login()">Sign in</button>
-    <p class="sub" style="margin-top:12px">Use the cloud account listed as ADMIN_EMAIL on the server.</p>
+    <button class="btn" style="width:100%" onclick="login()">Enter the Lab</button>
+    <p class="narf">Narf! Use the cloud account listed as ADMIN_EMAIL on the server.</p>
   </div>
 
   <div id="appView" class="hidden">
-    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <div>
-        <h1>Admin portal</h1>
+        <h1>🧠 Brain's Control Lab</h1>
         <p class="sub" id="who">—</p>
       </div>
-      <button class="btn-ghost" onclick="logout()">Log out</button>
+      <button class="btn-ghost" onclick="logout()">Log out · Poit!</button>
     </div>
 
     <div class="card">
       <div class="grid" id="stats"></div>
+      <p class="narf" style="margin-top:10px">The same thing we do every night, Pinky — try to take over the world of SME invoicing.</p>
     </div>
 
-    <div class="tabs row" style="margin-bottom:12px">
-      <button class="tab on" data-tab="users" onclick="tab('users')">Users</button>
-      <button class="tab" data-tab="wa" onclick="tab('wa')">WA clients</button>
-      <button class="tab" data-tab="tickets" onclick="tab('tickets')">Tickets</button>
-      <button class="tab" data-tab="notifs" onclick="tab('notifs')">Notifications</button>
+    <div class="row" style="margin-bottom:14px">
+      <button class="tab on" data-tab="users" onclick="tab('users')">👥 Users</button>
+      <button class="tab" data-tab="wa" onclick="tab('wa')">📱 WA Clients</button>
+      <button class="tab" data-tab="tickets" onclick="tab('tickets')">🛠 Tickets</button>
+      <button class="tab" data-tab="notifs" onclick="tab('notifs')">🔔 Notifications</button>
     </div>
 
     <div id="panel-users" class="card"></div>
@@ -311,7 +321,7 @@ let token = localStorage.getItem('saip_admin_token') || '';
 function toast(msg){
   const el=document.getElementById('toast');
   el.textContent=msg; el.style.display='block';
-  setTimeout(()=>el.style.display='none',3200);
+  setTimeout(()=>el.style.display='none',3400);
 }
 async function api(path, opts={}){
   const r = await fetch(API+path,{
@@ -333,10 +343,9 @@ async function login(){
     const password=document.getElementById('password').value;
     const data=await api('/api/auth/login',{method:'POST',body:{email,password}});
     token=data.token; localStorage.setItem('saip_admin_token',token);
-    // verify admin
     await api('/api/admin/me');
     showApp();
-  }catch(e){ toast(e.message||'Login failed'); }
+  }catch(e){ toast(e.message||'Login failed · Zort!'); }
 }
 function logout(){
   token=''; localStorage.removeItem('saip_admin_token');
@@ -354,10 +363,10 @@ async function showApp(){
   document.getElementById('appView').classList.remove('hidden');
   try{
     const me=await api('/api/admin/me');
-    document.getElementById('who').textContent=me.admin.email+(me.admin.name?' · '+me.admin.name:'');
+    document.getElementById('who').textContent=me.admin.email+(me.admin.name?' · '+me.admin.name:'')+' · Lab Director';
     await refreshAll();
   }catch(e){
-    toast('Admin access required');
+    toast('Admin access required · Narf!');
     logout();
   }
 }
@@ -384,24 +393,24 @@ async function loadUsers(){
     +'<button class="btn-ok" onclick="resetPw(\''+u.id+'\')">Reset PW</button>'
     +'<button class="btn-danger" onclick="delUser(\''+u.id+'\',\''+u.email+'\')">Delete</button>'
     +'</td></tr>').join('');
-  document.getElementById('panel-users').innerHTML='<h3 style="margin:0 0 12px">Cloud users</h3>'
+  document.getElementById('panel-users').innerHTML='<h3 style="margin:0 0 12px">Cloud users · Lab subjects</h3>'
     +'<div class="row" style="margin-bottom:10px"><button class="btn-ghost" onclick="loadUsers()">Refresh</button></div>'
     +'<table><thead><tr><th>User</th><th>Role</th><th>WS</th><th>Joined</th><th>Actions</th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="5">No users</td></tr>')+'</tbody></table>';
+    +(rows||'<tr><td colspan="5">No users yet · The lab is empty</td></tr>')+'</tbody></table>';
 }
 async function resetPw(id){
   if(!confirm('Generate a temporary password for this user?')) return;
   try{
     const d=await api('/api/admin/users/'+id+'/reset-password',{method:'POST',body:{}});
     prompt('Temporary password (copy now):', d.temporary_password);
-    toast('Password reset for '+d.email);
+    toast('Password reset for '+d.email+' · Success!');
   }catch(e){ toast(e.message); }
 }
 async function delUser(id,email){
   if(!confirm('Delete account '+email+' and their workspace? This cannot be undone.')) return;
   try{
     await api('/api/admin/users/'+id,{method:'DELETE'});
-    toast('Deleted '+email);
+    toast('Deleted '+email+' · Poit!');
     await refreshAll();
   }catch(e){ toast(e.message); }
 }
@@ -413,15 +422,15 @@ async function loadWa(){
     +'<td>'+(c.registered?'✅':'⚠️')+'</td>'
     +'<td>'+(c.source||'')+'</td>'
     +'<td><button class="btn-danger" onclick="delWa(\''+c.phone+'\')">Remove</button></td></tr>').join('');
-  document.getElementById('panel-wa').innerHTML='<h3 style="margin:0 0 12px">WhatsApp clients</h3>'
+  document.getElementById('panel-wa').innerHTML='<h3 style="margin:0 0 12px">WhatsApp clients · Future minions</h3>'
     +'<table><thead><tr><th>Client</th><th>Email</th><th>Reg</th><th>Source</th><th></th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="5">None</td></tr>')+'</tbody></table>';
+    +(rows||'<tr><td colspan="5">None yet</td></tr>')+'</tbody></table>';
 }
 async function delWa(phone){
   if(!confirm('Remove WA profile '+phone+'?')) return;
   try{
     await api('/api/admin/wa-clients/'+phone,{method:'DELETE'});
-    toast('Removed');
+    toast('Removed · Zort!');
     await loadWa();
   }catch(e){ toast(e.message); }
 }
@@ -436,9 +445,9 @@ async function loadTickets(){
     +'<button class="btn" onclick="setTicket(\''+t.id+'\',\'in_progress\')">In progress</button>'
     +'<button class="btn-ok" onclick="setTicket(\''+t.id+'\',\'done\')">Done</button>'
     +'</td></tr>').join('');
-  document.getElementById('panel-tickets').innerHTML='<h3 style="margin:0 0 12px">Job intake (WhatsApp)</h3>'
+  document.getElementById('panel-tickets').innerHTML='<h3 style="margin:0 0 12px">Job intake (WhatsApp) · Lab experiments</h3>'
     +'<table><thead><tr><th>Customer</th><th>Device</th><th>Issue</th><th>Status</th><th></th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="5">No tickets</td></tr>')+'</tbody></table>';
+    +(rows||'<tr><td colspan="5">No tickets · Quiet night in the lab</td></tr>')+'</tbody></table>';
 }
 async function setTicket(id,status){
   try{
@@ -453,13 +462,13 @@ async function loadNotifs(){
     +'<td>'+(n.type||'')+'</td>'
     +'<td><b>'+(n.title||'')+'</b><div style="color:var(--muted)">'+(n.body||'')+'</div></td>'
     +'<td style="font-size:.75rem">'+(n.created_at||'').replace('T',' ').slice(0,19)+'</td></tr>').join('');
-  document.getElementById('panel-notifs').innerHTML='<h3 style="margin:0 0 12px">Notifications</h3>'
+  document.getElementById('panel-notifs').innerHTML='<h3 style="margin:0 0 12px">Notifications · Brain\'s alerts</h3>'
     +'<div class="row" style="margin-bottom:10px"><button class="btn-ghost" onclick="clearNotifs()">Clear all</button></div>'
     +'<table><thead><tr><th>Type</th><th>Message</th><th>When</th></tr></thead><tbody>'
     +(rows||'<tr><td colspan="3">None</td></tr>')+'</tbody></table>';
 }
 async function clearNotifs(){
-  try{ await api('/api/admin/notifications/clear',{method:'POST',body:{}}); toast('Cleared'); await loadNotifs(); }
+  try{ await api('/api/admin/notifications/clear',{method:'POST',body:{}}); toast('Cleared · Narf!'); await loadNotifs(); }
   catch(e){ toast(e.message); }
 }
 if(token){ showApp(); }
