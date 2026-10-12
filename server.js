@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v3.2.0
- * Advanced brain-engine · multi-step · online forms · Q1–Q10
+ * SA Invoice Pro – Sync Server v3.3.0
+ * Admin portal · brain-engine · forms · Q1–Q10
  */
 require('dotenv').config();
 const express = require('express');
@@ -18,6 +18,7 @@ const { mountQuarters } = require('./quarters');
 const { mountQuartersLate } = require('./quarters-late');
 const { mountFlows } = require('./flows');
 const { createBrainEngine } = require('./brain-engine');
+const { mountAdmin } = require('./admin');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -27,6 +28,7 @@ const STATUS_TOKEN_RAW = process.env.STATUS_API_TOKEN || DEFAULT_STATUS_TOKEN;
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com';
 const RESET_TOKEN_HOURS = 1;
 const BUSINESS_OWNER_ID = process.env.BUSINESS_OWNER_USER_ID || null;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'pcrepairdex@gmail.com';
 
 function buildAllowedTokens() {
   const set = new Set();
@@ -344,9 +346,10 @@ app.get('/api/wa/pending', auth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '3.2.0',
-    features: ['brain_engine_v3', 'intent_classifier', 'multi_step_flows', 'online_forms', 'q1_q10'],
+    version: '3.3.0',
+    features: ['admin_portal', 'brain_engine_v3', 'multi_step_flows', 'online_forms', 'q1_q10'],
     ar: PUBLIC_BASE + '/api/ar',
+    admin: PUBLIC_BASE + '/admin',
     forms: {
       register: PUBLIC_BASE + '/forms/register',
       job: PUBLIC_BASE + '/forms/job',
@@ -354,7 +357,7 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.2.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.3.0' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
@@ -368,7 +371,6 @@ mountQuartersLate(app, {
   auth, statusAuth, now, pushNotification, PUBLIC_BASE,
 });
 
-// Online HTML forms (register / job)
 mountFlows(app, {
   DATA_DIR, loadJson, saveJson, waClients, persistWaClients,
   ticketsIntake, persistTickets, pushNotification, now, PUBLIC_BASE,
@@ -403,6 +405,14 @@ mountWaFlow(app, {
   ticketsIntake, persistTickets, pushNotification, now, uuidv4, PUBLIC_BASE,
 });
 
+mountAdmin(app, {
+  users, persistUsers, workspaces, persistWorkspaces,
+  waClients, persistWaClients, ticketsIntake, persistTickets,
+  invoiceStatus, notifications, persistNotifs,
+  auth, now, JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE,
+  loadJson, saveJson, DATA_DIR, path,
+});
+
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v3.2.0 on port ${PORT}`);
+  console.log(`SAIP Sync v3.3.0 on port ${PORT}`);
 });
