@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v1.3.1
- * WA identity · registration · notifications · client portal
+ * SA Invoice Pro – Sync Server v1.4.0
+ * WA identity · gated client menu · portal · notifications
  */
 require('dotenv').config();
 const express = require('express');
@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 const { mountPortal } = require('./portal');
+const { mountWaFlow } = require('./wa-flow');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -454,13 +455,27 @@ app.post('/api/wa/pending/:phone/imported', auth, (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SA Invoice Pro Sync', version: '1.3.1', features: ['wa_register', 'phone_locked_invoices', 'notifications', 'client_portal'], portal: PUBLIC_BASE + '/portal/:token' });
+  res.json({ name: 'SA Invoice Pro Sync', version: '1.4.0', features: ['wa_gated_menu', 'wa_register', 'phone_locked_docs', 'client_portal'] });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.3.1' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.4.0' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
+mountWaFlow(app, {
+  statusAuth,
+  normalizePhone,
+  waClients,
+  workspaces,
+  invoiceStatus,
+  ticketsIntake,
+  persistTickets,
+  pushNotification,
+  now,
+  uuidv4,
+  PUBLIC_BASE,
+});
+
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.3.1 on port ${PORT}`);
+  console.log(`SAIP Sync v1.4.0 on port ${PORT}`);
 });
