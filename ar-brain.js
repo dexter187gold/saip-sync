@@ -1,6 +1,7 @@
 /**
- * AutoResponder brain v2.0 — Q1–Q4
- * POST JSON → { replies: [{ message }] }
+ * AutoResponder brain v2.1
+ * Fixes: registration when AR only sends contact NAME (no phone digits)
+ * Rich client form + flexible field parsing
  */
 
 function moneyR(n) {
@@ -12,18 +13,57 @@ function moneyR(n) {
 function normalizePhone(p) {
   if (!p) return null;
   let s = String(p).replace(/\D/g, '');
-  if (s.length > 11 && s.startsWith('27')) s = s.slice(0, 11);
+  if (!s) return null;
+  // SA local 0xxxxxxxxx → 27xxxxxxxxx
   if (s.startsWith('0') && s.length === 10) s = '27' + s.slice(1);
-  if (s.length < 9) return null;
+  // strip long junk but keep 27 + 9 digits
+  if (s.startsWith('27') && s.length > 11) s = s.slice(0, 11);
+  if (s.length < 9 || s.length > 15) return null;
   return s;
 }
 
 function extractPhoneFromSender(sender) {
   if (!sender) return null;
   const s = String(sender);
-  const matches = s.match(/(\+?\d[\d\s\-]{8,}\d)/g);
+  const matches = s.match(/(\+?\d[\d\s\-]{7,}\d)/g);
   if (matches && matches.length) return normalizePhone(matches[matches.length - 1]);
   return normalizePhone(s);
+}
+
+function extractPhoneFromMessage(text) {
+  if (!text) return null;
+  for (const line of String(text).split(/\r?\n/).map((l) => l.trim())) {
+    const m = line.match(/^(?:phone|mobile|cell|whatsapp|wa|number|tel)\s*[:\-]\s*(.+)$/i);
+    if (m) {
+      const p = normalizePhone(m[1]);
+      if (p) return p;
+    }
+  }
+  // bare SA number in message
+  const bare = String(text).match(/(?:\+27|27|0)\s*\d[\d\s\-]{7,}\d/);
+  if (bare) return normalizePhone(bare[0]);
+  return null;
+}
+
+function extractPhoneFromBody(data, req) {
+  const q = (data && data.query) || {};
+  const headerPhone =
+    (req.headers['x-wa-phone'] || req.headers['x-phone'] || req.headers['x-sender-phone'] || '').toString();
+  let phone =
+    normalizePhone(headerPhone) ||
+    extractPhoneFromSender(q.sender || data.sender || '') ||
+    normalizePhone(q.senderNumber || q.phone || q.from || data.phone || data.from || '') ||
+    extractPhoneFromMessage(q.message || data.message || '');
+
+  // Deep scan whole JSON for phone-like values (last resort)
+  if (!phone) {
+    try {
+      const blob = JSON.stringify(data);
+      const m = blob.match(/(\+27|27|0)\d{8,11}/);
+      if (m) phone = normalizePhone(m[0]);
+    } catch {}
+  }
+  return phone;
 }
 
 function reply(messages) {
@@ -31,6 +71,40 @@ function reply(messages) {
     .filter((m) => m != null && String(m).trim() !== '')
     .map((m) => ({ message: String(m) }));
   return { replies: list.length ? list : [{ message: 'Reply *menu* for options.' }] };
+}
+
+function parseClientForm(text) {
+  const fields = {
+    name: '',
+    email: '',
+    company: '',
+    address: '',
+    city: '',
+    phone: null,
+    vat: '',
+    notes: '',
+  };
+  for (const line of String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    if (/^register$/i.test(line)) continue;
+    let m;
+    if ((m = line.match(/^(?:name|full\s*name)\s*[:\-]\s*(.+)$/i))) fields.name = m[1].trim();
+    else if ((m = line.match(/^(?:email|e-mail)\s*[:\-]\s*(.+)$/i))) fields.email = m[1].trim().toLowerCase();
+    else if ((m = line.match(/^(?:company|business|org|organisation|organization)\s*[:\-]\s*(.+)$/i))) fields.company = m[1].trim();
+    else if ((m = line.match(/^(?:address|street)\s*[:\-]\s*(.+)$/i))) fields.address = m[1].trim();
+    else if ((m = line.match(/^(?:city|town)\s*[:\-]\s*(.+)$/i))) fields.city = m[1].trim();
+    else if ((m = line.match(/^(?:phone|mobile|cell|whatsapp|wa|number|tel)\s*[:\-]\s*(.+)$/i))) fields.phone = normalizePhone(m[1]);
+    else if ((m = line.match(/^(?:vat|tax)\s*[:\-]\s*(.+)$/i))) fields.vat = m[1].trim();
+    else if ((m = line.match(/^(?:notes|note|comment)\s*[:\-]\s*(.+)$/i))) fields.notes = m[1].trim();
+  }
+  return fields;
+}
+
+function looksLikeClientForm(msg) {
+  const t = String(msg || '');
+  if (/register/i.test(t) && /name\s*[:\-]/i.test(t)) return true;
+  // Name + Email without REGISTER keyword
+  if (/name\s*[:\-]/i.test(t) && (/email\s*[:\-]/i.test(t) || /company\s*[:\-]/i.test(t) || /phone\s*[:\-]/i.test(t))) return true;
+  return false;
 }
 
 function mountArBrain(app, ctx) {
@@ -50,6 +124,8 @@ function mountArBrain(app, ctx) {
     onHumanRequest,
     onQuoteAction,
   } = ctx;
+
+  let lastDebug = null;
 
   function checkArAuth(req) {
     const h = req.headers['x-status-token'] || '';
@@ -92,7 +168,6 @@ function mountArBrain(app, ctx) {
       quotes = (ws.quotes || []).filter((q) => String(q.clientId) === cid);
       tickets = (ws.tickets || []).filter((t) => String(t.clientId) === cid);
     }
-    // Also quotes matched by client phone in any workspace
     if (!quotes.length && p) {
       for (const wsRow of Object.values(workspaces || {})) {
         const clients = wsRow?.data?.clients || [];
@@ -122,21 +197,36 @@ function mountArBrain(app, ctx) {
     ].filter(Boolean);
   }
 
-  function registerGate() {
-    return [
-      '🔒 *Client access locked*',
+  /** Full interactive registration form */
+  function registerGate(needPhone) {
+    const lines = [
+      '📝 *Client registration*',
       '',
-      'Complete this form to unlock *your* invoices & account:',
+      'Copy this form, fill it in, and send it back as *one message*:',
       '',
       '*REGISTER*',
+    ];
+    if (needPhone) {
+      lines.push('Phone: 0821234567   ← *required* (your WhatsApp number)');
+    }
+    lines.push(
       'Name: Your full name',
       'Email: you@email.com',
       'Company: (optional)',
+      'Address: (optional)',
+      'City: (optional)',
+      'VAT: (optional)',
+      'Notes: (optional)',
       '',
-      'Need a repair? Reply *5* (open to everyone).',
+      needPhone
+        ? '⚠️ We could not detect your number from WhatsApp. *Phone:* is required.'
+        : 'Tip: include *Phone:* if registration fails.',
       '',
-      '0️⃣ Menu',
-    ].join('\n');
+      'Need a repair now? Reply *5*',
+      '',
+      '0️⃣ Menu'
+    );
+    return lines.join('\n');
   }
 
   function menu(phone) {
@@ -144,13 +234,13 @@ function mountArBrain(app, ctx) {
     const name = reg ? getProfile(phone)?.name : null;
     return [
       reg ? `👋 *Hi ${name}*` : '👋 *PC REPAIR DEX*',
-      reg ? '📱 Number matched · private account' : 'New? Use *1* to register.',
+      reg ? '📱 Number matched · private account' : 'New? Reply *1* to register (include Phone).',
       '',
       '*Main menu*',
-      '1️⃣ My account',
+      '1️⃣ My account / register',
       '2️⃣ My invoices',
       '3️⃣ Payment / EFT',
-      '4️⃣ My quotes (ACCEPT / REJECT / DEPOSIT)',
+      '4️⃣ My quotes',
       '5️⃣ New job card',
       '6️⃣ Statement',
       '7️⃣ Human agent',
@@ -163,44 +253,67 @@ function mountArBrain(app, ctx) {
     ].join('\n');
   }
 
-  function handleRegister(phone, text) {
-    let name = '', email = '', company = '', address = '';
-    for (const line of String(text).split(/\r?\n/).map((l) => l.trim())) {
-      const mName = line.match(/^(?:name)\s*[:\-]\s*(.+)$/i);
-      const mEmail = line.match(/^(?:email|e-mail)\s*[:\-]\s*(.+)$/i);
-      const mCo = line.match(/^(?:company|business)\s*[:\-]\s*(.+)$/i);
-      const mAddr = line.match(/^(?:address)\s*[:\-]\s*(.+)$/i);
-      if (mName) name = mName[1].trim();
-      if (mEmail) email = mEmail[1].trim().toLowerCase();
-      if (mCo) company = mCo[1].trim();
-      if (mAddr) address = mAddr[1].trim();
+  function handleRegister(phoneFromChat, text) {
+    const f = parseClientForm(text);
+    const phone = f.phone || phoneFromChat;
+
+    if (!phone) {
+      return registerGate(true);
     }
-    if (!phone) return 'Could not read your WhatsApp number.';
-    if (!name || name.length < 2) return registerGate();
+    if (!f.name || f.name.length < 2) {
+      return [
+        'Almost there — *Name* is required.',
+        '',
+        registerGate(!phoneFromChat),
+      ].join('\n');
+    }
+
     const existing = waClients[phone];
     const isNew = !existing || !existing.registered;
     waClients[phone] = {
-      id: existing?.id || uuidv4(), phone, name,
-      email: email || existing?.email || null,
-      company: company || existing?.company || null,
-      address: address || existing?.address || null,
-      source: 'whatsapp_register', registered: true,
+      id: existing?.id || uuidv4(),
+      phone,
+      name: f.name,
+      email: f.email || existing?.email || null,
+      company: f.company || existing?.company || null,
+      address: f.address || existing?.address || null,
+      city: f.city || existing?.city || null,
+      vat: f.vat || existing?.vat || null,
+      notes: f.notes || existing?.notes || null,
+      source: 'whatsapp_register',
+      registered: true,
       linked_client_id: existing?.linked_client_id || null,
       owner_user_id: existing?.owner_user_id || null,
-      created_at: existing?.created_at || now(), updated_at: now(),
+      created_at: existing?.created_at || now(),
+      updated_at: now(),
       pending_import: isNew || !existing?.linked_client_id,
     };
     persistWaClients();
+
     if (isNew || waClients[phone].pending_import) {
       pushNotification({
-        type: 'wa_client_new', title: 'New WhatsApp client',
-        body: `${name} registered (${phone})`, payload: { phone, name, email },
+        type: 'wa_client_new',
+        title: 'New WhatsApp client',
+        body: `${f.name} registered (${phone})`,
+        payload: { ...waClients[phone] },
       });
     }
+
     return [
-      isNew ? '✅ *Profile created*' : '✅ *Profile updated*',
-      '', '👤 ' + name, email ? '📧 ' + email : null, '📱 ' + phone,
-      '', 'Open *2* invoices · *3* payment · *4* quotes.', '', '0️⃣ Menu',
+      isNew ? '✅ *Profile created successfully!*' : '✅ *Profile updated*',
+      '',
+      '👤 ' + f.name,
+      f.email ? '📧 ' + f.email : null,
+      f.company ? '🏢 ' + f.company : null,
+      f.address ? '📍 ' + f.address : null,
+      f.city ? '🏙 ' + f.city : null,
+      f.vat ? '🧾 VAT: ' + f.vat : null,
+      '📱 ' + phone,
+      '',
+      'You are now *registered*.',
+      'Try: *2* invoices · *3* payment · *menu*',
+      '',
+      '0️⃣ Menu',
     ].filter(Boolean).join('\n');
   }
 
@@ -238,7 +351,7 @@ function mountArBrain(app, ctx) {
       '✅ *Job card received*', '',
       name ? '👤 ' + name : null, device ? '💻 ' + device : null, issue ? '⚠️ ' + issue : null,
       '', 'We will follow up on this number.',
-      !isRegistered(phone) ? 'Tip: *1* REGISTER for future invoices.' : null,
+      !isRegistered(phone) ? 'Tip: *1* REGISTER (include Phone) for invoices.' : null,
       '', '0️⃣ Menu',
     ].filter(Boolean).join('\n');
   }
@@ -250,15 +363,8 @@ function mountArBrain(app, ctx) {
     const ref = m[2].toUpperCase();
     const { quotes } = docsForPhone(phone);
     let quote = quotes.find((q) => String(q.number || q.id || '').toUpperCase().replace(/\s+/g, '') === ref.replace(/\s+/g, ''));
-    if (!quote) {
-      quote = quotes.find((q) => String(q.number || '').toUpperCase().includes(ref));
-    }
-    if (!quote && typeof onQuoteAction === 'function') {
-      // still log attempt
-    }
-    if (!quote) {
-      return 'Quote *' + ref + '* not found for this number.\nReply *4* to list quotes.\n\n0️⃣ Menu';
-    }
+    if (!quote) quote = quotes.find((q) => String(q.number || '').toUpperCase().includes(ref));
+    if (!quote) return 'Quote *' + ref + '* not found for this number.\nReply *4* to list quotes.\n\n0️⃣ Menu';
     if (typeof onQuoteAction === 'function') {
       try { onQuoteAction({ phone, action: act, quote }); } catch (e) { console.warn(e); }
     }
@@ -269,20 +375,24 @@ function mountArBrain(app, ctx) {
       payload: { action: act, quote_number: quote.number, phone },
     });
     if (act === 'accept') {
-      return ['✅ *Quote accepted*', '', 'Quote: *' + (quote.number || quote.id) + '*', 'Total: ' + moneyR(quote.total), '', 'We will confirm next steps.', 'Reply *3* or *9* for payment.', '', '0️⃣ Menu'].join('\n');
+      return ['✅ *Quote accepted*', '', 'Quote: *' + (quote.number || quote.id) + '*', 'Total: ' + moneyR(quote.total), '', 'Reply *3* or *9* for payment.', '', '0️⃣ Menu'].join('\n');
     }
     if (act === 'reject') {
-      return ['Noted — *' + (quote.number || quote.id) + '* declined.', '', 'Reply *7* to discuss options.', '', '0️⃣ Menu'].join('\n');
+      return ['Noted — *' + (quote.number || quote.id) + '* declined.', '', 'Reply *7* to discuss.', '', '0️⃣ Menu'].join('\n');
     }
     const dep = Number(quote.total) * 0.5;
-    return ['💰 *Deposit request*', '', 'Quote: *' + (quote.number || quote.id) + '*', 'Deposit (50%): *' + moneyR(dep) + '*', 'Full total: ' + moneyR(quote.total), '', ...payBlurb(), 'Reference: *DEP-' + (quote.number || quote.id) + '*', '', 'Send POP after payment.', '', '0️⃣ Menu'].join('\n');
+    return ['💰 *Deposit request*', '', 'Quote: *' + (quote.number || quote.id) + '*', 'Deposit (50%): *' + moneyR(dep) + '*', '', ...payBlurb(), 'Reference: *DEP-' + (quote.number || quote.id) + '*', '', '0️⃣ Menu'].join('\n');
   }
 
   function route(phone, message) {
     const msg = String(message || '').trim();
 
-    if (/register/i.test(msg) && /name\s*[:\-]/i.test(msg)) return handleRegister(phone, msg);
-    if (/\bJOB\b/i.test(msg) && (/device\s*[:\-]/i.test(msg) || /issue\s*[:\-]/i.test(msg))) return handleJob(phone, msg);
+    // Client form (REGISTER or Name:+Email:)
+    if (looksLikeClientForm(msg)) return handleRegister(phone, msg);
+
+    if (/\bJOB\b/i.test(msg) && (/device\s*[:\-]/i.test(msg) || /issue\s*[:\-]/i.test(msg))) {
+      return handleJob(phone, msg);
+    }
 
     const qa = handleQuoteAction(phone, msg);
     if (qa) return qa;
@@ -304,17 +414,17 @@ function mountArBrain(app, ctx) {
 
     if (/^(0|menu|hi|hello|hey|help|start|back)$/i.test(msg) || /\bmenu\b/i.test(msg)) return menu(phone);
 
-    if (/^(1|account|profile|my account)$/i.test(msg)) {
-      if (!isRegistered(phone)) return registerGate();
+    if (/^(1|account|profile|my account|register)$/i.test(msg)) {
+      if (!isRegistered(phone)) return registerGate(!phone);
       const c = getProfile(phone);
       const { invoices, quotes, tickets, intake } = docsForPhone(phone);
       const open = invoices.filter((i) => ['unpaid', 'partial', 'overdue'].includes(String(i.status || '').toLowerCase()));
       const ar = open.reduce((s, i) => s + (Number(i.balance_due ?? i.total) || 0), 0);
-      return ['👤 *Your account*', '', 'Name: *' + (c.name || '—') + '*', c.email ? 'Email: ' + c.email : null, 'WhatsApp: ' + phone, '', '📊 Open invoices: ' + open.length, '💳 Outstanding: *' + moneyR(ar) + '*', '📋 Quotes: ' + quotes.length, '🛠 Jobs: ' + (tickets.length + intake.length), '', '0️⃣ Menu'].filter((x) => x !== null).join('\n');
+      return ['👤 *Your account*', '', 'Name: *' + (c.name || '—') + '*', c.email ? 'Email: ' + c.email : null, c.company ? 'Company: ' + c.company : null, c.address ? 'Address: ' + c.address : null, c.city ? 'City: ' + c.city : null, 'WhatsApp: ' + phone, '', '📊 Open invoices: ' + open.length, '💳 Outstanding: *' + moneyR(ar) + '*', '📋 Quotes: ' + quotes.length, '🛠 Jobs: ' + (tickets.length + intake.length), '', 'To update details, send the REGISTER form again.', '', '0️⃣ Menu'].filter((x) => x !== null).join('\n');
     }
 
     if (/^(2|invoices|my invoices)$/i.test(msg)) {
-      if (!isRegistered(phone)) return registerGate();
+      if (!isRegistered(phone)) return registerGate(!phone);
       const { invoices } = docsForPhone(phone);
       if (!invoices.length) return '📄 *Your invoices*\n\nNone linked yet.\n\n0️⃣ Menu';
       const lines = ['📄 *Your invoices*', ''];
@@ -326,7 +436,7 @@ function mountArBrain(app, ctx) {
     }
 
     if (/^(3|payment|pay|eft)$/i.test(msg)) {
-      if (!isRegistered(phone)) return registerGate();
+      if (!isRegistered(phone)) return registerGate(!phone);
       const { invoices } = docsForPhone(phone);
       const open = invoices.filter((i) => ['unpaid', 'partial', 'overdue'].includes(String(i.status || '').toLowerCase()));
       const ar = open.reduce((s, i) => s + (Number(i.balance_due ?? i.total) || 0), 0);
@@ -341,7 +451,7 @@ function mountArBrain(app, ctx) {
     }
 
     if (/^(4|quotes|my quotes)$/i.test(msg)) {
-      if (!isRegistered(phone)) return registerGate();
+      if (!isRegistered(phone)) return registerGate(!phone);
       const { quotes } = docsForPhone(phone);
       if (!quotes.length) return '📋 *Your quotes*\n\nNone on file.\n\n0️⃣ Menu';
       const lines = ['📋 *Your quotes*', '', 'Actions: ACCEPT QT-xxx · REJECT QT-xxx · DEPOSIT QT-xxx', ''];
@@ -355,7 +465,7 @@ function mountArBrain(app, ctx) {
     if (/^(5|job|repair|ticket)$/i.test(msg)) return handleJob(phone, '');
 
     if (/^(6|statement)$/i.test(msg)) {
-      if (!isRegistered(phone)) return registerGate();
+      if (!isRegistered(phone)) return registerGate(!phone);
       const { profile, invoices } = docsForPhone(phone);
       const open = invoices.filter((i) => ['unpaid', 'partial', 'overdue'].includes(String(i.status || '').toLowerCase()));
       const ar = open.reduce((s, i) => s + (Number(i.balance_due ?? i.total) || 0), 0);
@@ -378,23 +488,15 @@ function mountArBrain(app, ctx) {
         body: (getProfile(phone)?.name || phone || 'Client') + ' wants an agent',
         payload: { phone },
       });
-      return '🙋 *Request received*\n\nA team member will reply on this chat shortly.\n\n0️⃣ Menu';
+      return '🙋 *Request received*\n\nA team member will reply shortly.\n\n0️⃣ Menu';
     }
 
-    if (/^(8|hours|location|address)$/i.test(msg)) {
+    if (/^(8|hours|location)$/i.test(msg)) {
       return ['📍 *PC REPAIR DEX*', '', 'Hours: Mon–Fri 09:00–17:00', 'Sat: 09:00–13:00 (by appointment)', 'Reply *7* for a call-back.', '', '0️⃣ Menu'].join('\n');
     }
 
     if (/^(9|bank|banking)$/i.test(msg)) {
       return ['🏦 *Banking details*', '', ...payBlurb(), '', '0️⃣ Menu'].join('\n');
-    }
-
-    if (/^remind/i.test(msg) && isRegistered(phone)) {
-      const { invoices } = docsForPhone(phone);
-      const open = invoices.filter((i) => ['unpaid', 'partial', 'overdue'].includes(String(i.status || '').toLowerCase()));
-      if (!open.length) return '✅ No overdue balance.\n\n0️⃣ Menu';
-      const inv = open[0];
-      return ['⏰ *Reminder*', '', 'Invoice *' + inv.invoice_number + '*', 'Due: *' + moneyR(inv.balance_due ?? inv.total) + '*', '', ...payBlurb(), 'Ref: *' + inv.invoice_number + '*', '', '0️⃣ Menu'].join('\n');
     }
 
     return menu(phone);
@@ -407,10 +509,17 @@ function mountArBrain(app, ctx) {
     const data = req.body || {};
     const q = data.query || {};
     const message = q.message || data.message || '';
-    const sender = q.sender || data.sender || '';
-    const headerPhone = req.headers['x-wa-phone'] || req.headers['x-phone'] || '';
-    let phone = normalizePhone(headerPhone) || extractPhoneFromSender(sender);
-    if (!phone && q.senderNumber) phone = normalizePhone(q.senderNumber);
+    const phone = extractPhoneFromBody(data, req);
+
+    lastDebug = {
+      at: now(),
+      sender: q.sender || data.sender || null,
+      messagePreview: String(message).slice(0, 200),
+      phoneResolved: phone,
+      keys: Object.keys(data),
+      queryKeys: Object.keys(q),
+    };
+
     try {
       return res.status(200).json(reply(route(phone, message)));
     } catch (e) {
@@ -423,10 +532,14 @@ function mountArBrain(app, ctx) {
     res.json({
       ok: true,
       name: 'SAIP AutoResponder Brain',
-      version: '2.0.0',
-      quarters: ['Q1 identity+menu', 'Q2 pay+reminders', 'Q3 human inbox', 'Q4 quote actions'],
+      version: '2.1.0',
+      fix: 'REGISTER requires Phone: when WhatsApp contact name has no digits',
       usage: 'Connect your web server → POST this URL',
     });
+  });
+
+  app.get('/api/ar/debug-last', (req, res) => {
+    res.json({ ok: true, last: lastDebug });
   });
 }
 
