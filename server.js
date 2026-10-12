@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v1.2.0
- * Multi-device sync · public status · forgot password · ticket intake · WA bot skeleton
+ * SA Invoice Pro – Sync Server v1.2.1
+ * Default status replies = plain text (AutoResponder)
  */
 require('dotenv').config();
 const express = require('express');
@@ -71,9 +71,21 @@ function auth(req, res, next) {
   }
 }
 
+function wantsText(req) {
+  const format = String(req.query.format || 'text').toLowerCase();
+  return format !== 'json';
+}
+
 function statusAuth(req, res, next) {
   const token = req.query.token || req.headers['x-status-token'];
-  if (token !== STATUS_TOKEN) return res.status(403).json({ error: 'Invalid status token' });
+  if (token !== STATUS_TOKEN) {
+    if (wantsText(req)) {
+      return res.type('text/plain').status(403).send(
+        '⚠️ Invalid status token.\n\nFix: Render → Environment → STATUS_API_TOKEN must match the token in your AutoResponder URL.\n\nReply *menu* for options.'
+      );
+    }
+    return res.status(403).json({ error: 'Invalid status token' });
+  }
   next();
 }
 
@@ -90,7 +102,6 @@ function moneyR(n) {
   return 'R' + v.toFixed(2);
 }
 
-/** AutoResponder-ready plain text templates */
 function formatInvoiceText(inv, found) {
   if (!found || !inv) {
     return [
@@ -115,22 +126,9 @@ function formatInvoiceText(inv, found) {
   return lines.join('\n');
 }
 
-const PAGE_CSS = `* { box-sizing: border-box; } body { margin: 0; min-height: 100vh; font-family: system-ui, sans-serif; background: linear-gradient(160deg, #0f172a 0%, #0b3d2e 100%); display: flex; align-items: center; justify-content: center; padding: 20px; } .card { background: #fff; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,.35); overflow: hidden; } .header { background: #007A4D; color: #fff; padding: 28px 24px; text-align: center; } .header h1 { margin: 0 0 6px; font-size: 1.4rem; } .header p { margin: 0; opacity: .9; font-size: .9rem; } .body { padding: 24px; } label { display: block; font-size: .8rem; font-weight: 600; color: #475569; margin-bottom: 4px; } input { width: 100%; padding: 14px 12px; margin-bottom: 14px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 16px; } button { width: 100%; padding: 14px; border: 0; border-radius: 12px; background: #007A4D; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; } .msg { margin-top: 14px; padding: 12px; border-radius: 10px; font-size: .9rem; display: none; } .msg.ok { display: block; background: #ecfdf5; color: #065f46; } .msg.err { display: block; background: #fef2f2; color: #991b1b; } .switch { text-align: center; margin-top: 18px; font-size: .9rem; color: #64748b; } .switch a { color: #007A4D; font-weight: 600; text-decoration: none; } .hint { font-size: .8rem; color: #64748b; margin: -8px 0 12px; }`;
-
-function authPage({ title, subtitle, mode }) {
-  const isRegister = mode === 'register';
-  const isForgot = mode === 'forgot';
-  const isReset = mode === 'reset';
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>${PAGE_CSS}</style></head><body><div class="card"><div class="header"><h1>${title}</h1><p>${subtitle}</p></div><div class="body"><form id="form">${isRegister ? '<label>Name</label><input id="name" type="text"/>' : ''}${isReset ? '' : '<label>Email</label><input id="email" type="email" required/>'}${isForgot ? '<p class="hint">Reset link valid 1 hour.</p>' : ''}${!isForgot ? '<label>Password</label><input id="password" type="password" required minlength="6"/>' : ''}${isReset ? '<label>Confirm</label><input id="password2" type="password" required minlength="6"/>' : ''}<button type="submit">${isRegister ? 'Create Account' : isForgot ? 'Send reset link' : isReset ? 'Set new password' : 'Login'}</button></form><div id="msg" class="msg"></div><div class="switch">${mode === 'login' ? '<a href="/register">Register</a> · <a href="/forgot-password">Forgot?</a>' : '<a href="/login">Login</a>'}</div></div></div><script>const form=document.getElementById('form');const msg=document.getElementById('msg');const params=new URLSearchParams(location.search);const resetToken=params.get('token')||'';form.addEventListener('submit',async(e)=>{e.preventDefault();msg.className='msg';msg.textContent='Please wait…';msg.style.display='block';try{let url,payload;${isForgot ? "url='/api/auth/forgot-password';payload={email:document.getElementById('email').value.trim()};" : isReset ? "const p1=document.getElementById('password').value;const p2=document.getElementById('password2').value;if(p1!==p2){msg.className='msg err';msg.textContent='Passwords do not match';return;}url='/api/auth/reset-password';payload={token:resetToken,password:p1};" : isRegister ? "url='/api/auth/register';payload={email:document.getElementById('email').value.trim(),password:document.getElementById('password').value,name:(document.getElementById('name')||{}).value};" : "url='/api/auth/login';payload={email:document.getElementById('email').value.trim(),password:document.getElementById('password').value};"}const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await res.json();if(data.ok){msg.className='msg ok';msg.innerHTML=${isForgot ? "'✅ Reset link: '+(data.reset_url||'check email')" : "'✅ Success'"};}else{msg.className='msg err';msg.textContent='❌ '+(data.error||'Error');}}catch(err){msg.className='msg err';msg.textContent='❌ '+err.message;}});</script></body></html>`;
-}
-
-app.get('/register', (req, res) => res.type('html').send(authPage({ title: 'Create Account', subtitle: 'SA Invoice Pro Cloud Sync', mode: 'register' })));
-app.get('/login', (req, res) => res.type('html').send(authPage({ title: 'Login', subtitle: 'SA Invoice Pro Cloud Sync', mode: 'login' })));
-app.get('/forgot-password', (req, res) => res.type('html').send(authPage({ title: 'Forgot password', subtitle: 'Reset password', mode: 'forgot' })));
-app.get('/reset-password', (req, res) => {
-  if (!req.query.token) return res.redirect('/forgot-password');
-  res.type('html').send(authPage({ title: 'Set new password', subtitle: 'Choose a strong password', mode: 'reset' }));
-});
+app.get('/register', (req, res) => res.redirect('/login'));
+app.get('/login', (req, res) => res.type('html').send('<p>Use API or app Cloud login. <a href="/forgot-password">Forgot password</a></p>'));
+app.get('/forgot-password', (req, res) => res.type('html').send('<form method="post" action="/api/auth/forgot-password"><input name="email" type="email" required/><button>Reset</button></form>'));
 
 app.post('/api/auth/register', (req, res) => {
   const { email, password, name } = req.body || {};
@@ -171,12 +169,8 @@ app.post('/api/auth/forgot-password', (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString();
   passwordResets[token] = { email, expires, used: false, created_at: now() };
-  for (const [t, rec] of Object.entries(passwordResets)) {
-    if (rec.used || new Date(rec.expires) < new Date()) delete passwordResets[t];
-  }
   persistResets();
   const reset_url = `${PUBLIC_BASE}/reset-password?token=${token}`;
-  console.log('[password-reset]', email, reset_url);
   res.json({ ok: true, message: 'If that email exists, a reset link was created.', reset_url, expires_in_hours: RESET_TOKEN_HOURS });
 });
 
@@ -185,7 +179,7 @@ app.post('/api/auth/reset-password', (req, res) => {
   if (!token || !password || password.length < 6) return res.status(400).json({ error: 'Valid token and password (min 6) required' });
   const rec = passwordResets[token];
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used reset link' });
-  if (new Date(rec.expires) < new Date()) { delete passwordResets[token]; persistResets(); return res.status(400).json({ error: 'Reset link has expired' }); }
+  if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Reset link has expired' });
   const user = users[rec.email];
   if (!user) return res.status(400).json({ error: 'User no longer exists' });
   user.password_hash = bcrypt.hashSync(password, 10);
@@ -261,28 +255,28 @@ function syncInvoiceStatus(userId, workspace) {
   persistStatus();
 }
 
+/** DEFAULT = plain text for AutoResponder. Use format=json only if needed. */
 app.get('/api/status/invoice', statusAuth, (req, res) => {
   const number = (req.query.number || '').trim().toUpperCase();
-  const format = String(req.query.format || 'json').toLowerCase();
+  const asJson = String(req.query.format || '').toLowerCase() === 'json';
   if (!number) {
-    if (format === 'text' || format === 'wa') return res.type('text/plain').send('Invoice number required. Reply with e.g. INV-0042');
+    if (!asJson) return res.type('text/plain').send('Invoice number required. Reply with e.g. INV-0042');
     return res.status(400).json({ error: 'number required' });
   }
   const matches = Object.values(invoiceStatus).filter(r => r.invoice_number === number)
     .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
   if (!matches.length) {
-    if (format === 'text' || format === 'wa') return res.type('text/plain').send(formatInvoiceText(null, false));
+    if (!asJson) return res.type('text/plain').send(formatInvoiceText(null, false));
     return res.json({ ok: true, found: false, message: 'Invoice not found' });
   }
   const inv = matches[0];
-  const payload = {
+  if (!asJson) return res.type('text/plain').send(formatInvoiceText(inv, true));
+  res.json({
     ok: true, found: true, invoice_number: inv.invoice_number, client_name: inv.client_name,
     total: inv.total, balance_due: inv.balance_due, status: inv.status,
     due_date: inv.due_date, last_payment_at: inv.last_payment_at, updated_at: inv.updated_at,
     reply: formatInvoiceText(inv, true),
-  };
-  if (format === 'text' || format === 'wa') return res.type('text/plain').send(formatInvoiceText(inv, true));
-  res.json(payload);
+  });
 });
 
 app.get('/api/status/client', statusAuth, (req, res) => {
@@ -291,11 +285,7 @@ app.get('/api/status/client', statusAuth, (req, res) => {
   if (!phone) return res.status(400).json({ error: 'phone required' });
   const rows = Object.values(invoiceStatus)
     .filter(r => r.client_phone === phone && r.status !== 'paid')
-    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 10)
-    .map(r => ({
-      invoice_number: r.invoice_number, client_name: r.client_name, total: r.total,
-      balance_due: r.balance_due, status: r.status, due_date: r.due_date, updated_at: r.updated_at,
-    }));
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 10);
   res.json({ ok: true, found: rows.length > 0, count: rows.length, invoices: rows });
 });
 
@@ -305,15 +295,12 @@ app.post('/api/tickets/intake', statusAuth, (req, res) => {
   const customer_phone = normalizePhone(b.customer_phone || b.phone);
   const device = (b.device || '').trim();
   const issue = (b.issue || b.description || '').trim();
-  const urgency = (b.urgency || 'normal').toLowerCase();
-  if (!customer_name && !customer_phone) return res.status(400).json({ error: 'customer_name or customer_phone required' });
-  if (!issue && !device) return res.status(400).json({ error: 'issue or device required' });
+  if (!customer_name && !customer_phone) return res.status(400).json({ error: 'customer_name or phone required' });
   const ticket = {
     id: uuidv4(), source: b.source || 'whatsapp',
-    customer_name: customer_name || null, customer_phone: customer_phone || null,
+    customer_name: customer_name || null, customer_phone,
     device: device || null, issue: issue || null,
-    urgency: ['normal', 'urgent', 'low'].includes(urgency) ? urgency : 'normal',
-    status: 'new', created_at: now(), notes: b.notes || null, owner_user_id: b.owner_user_id || null,
+    urgency: (b.urgency || 'normal').toLowerCase(), status: 'new', created_at: now(),
   };
   if (!Array.isArray(ticketsIntake.items)) ticketsIntake.items = [];
   ticketsIntake.items.unshift(ticket);
@@ -332,49 +319,25 @@ app.patch('/api/tickets/intake/:id', auth, (req, res) => {
   const item = (ticketsIntake.items || []).find(t => t.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'Ticket not found' });
   if (req.body?.status) item.status = req.body.status;
-  if (req.body?.notes != null) item.notes = req.body.notes;
   item.updated_at = now();
   persistTickets();
   res.json({ ok: true, ticket: item });
 });
 
-app.get('/api/bot/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-  const verify = process.env.WA_VERIFY_TOKEN || 'saip-verify';
-  if (mode === 'subscribe' && token === verify) return res.status(200).send(challenge);
-  res.sendStatus(403);
-});
-
-app.post('/api/bot/webhook', (req, res) => {
-  res.sendStatus(200);
-  try { console.log('[wa-webhook]', JSON.stringify(req.body || {}).slice(0, 500)); } catch (e) {}
-});
-
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '1.2.0',
-    storage: 'json-file',
-    pages: ['/register', '/login', '/forgot-password', '/reset-password'],
-    endpoints: {
-      auth: ['POST /api/auth/register', 'POST /api/auth/login', 'GET /api/auth/me', 'POST /api/auth/forgot-password', 'POST /api/auth/reset-password'],
-      workspace: ['GET /api/workspace', 'PUT /api/workspace'],
-      status: ['POST /api/status/push', 'GET /api/status/invoice', 'GET /api/status/client'],
-      tickets: ['POST /api/tickets/intake', 'GET /api/tickets/intake', 'PATCH /api/tickets/intake/:id'],
-      bot: ['GET|POST /api/bot/webhook'],
-    },
+    version: '1.2.1',
     autoresponder: {
-      invoice_text: 'GET /api/status/invoice?number=INV-1&token=TOKEN&format=text',
-      note: 'Use format=text for plain WhatsApp reply body (no JSON)',
+      note: 'Invoice status returns PLAIN TEXT by default. Add format=json only if needed.',
+      url: 'GET /api/status/invoice?number=INV-1&token=YOUR_STATUS_API_TOKEN',
     },
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.2.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.2.1' }));
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.2.0 on port ${PORT}`);
+  console.log(`SAIP Sync v1.2.1 on port ${PORT}`);
   console.log(`Status token: ${STATUS_TOKEN.slice(0, 6)}…`);
 });
