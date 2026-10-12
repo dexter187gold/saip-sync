@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v1.2.2
- * Status token: trim + multi-token + sensible default for AutoResponder
+ * SA Invoice Pro – Sync Server v1.3.0
+ * WhatsApp client identity · registration · phone-locked documents · notifications
  */
 require('dotenv').config();
 const express = require('express');
@@ -15,20 +15,18 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3847;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-// Default matches the token used in AutoResponder docs / app setup
 const DEFAULT_STATUS_TOKEN = 'SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8';
 const STATUS_TOKEN_RAW = process.env.STATUS_API_TOKEN || DEFAULT_STATUS_TOKEN;
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com';
 const RESET_TOKEN_HOURS = 1;
+const BUSINESS_OWNER_ID = process.env.BUSINESS_OWNER_USER_ID || null; // optional: pin notifications to one workspace
 
-/** Accept one token or comma-separated list; always trim */
 function buildAllowedTokens() {
   const set = new Set();
   for (const part of String(STATUS_TOKEN_RAW).split(',')) {
     const t = part.trim();
     if (t) set.add(t);
   }
-  // Always allow the documented default so URL and server stay in sync
   set.add(DEFAULT_STATUS_TOKEN);
   return set;
 }
@@ -41,6 +39,8 @@ const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const STATUS_FILE = path.join(DATA_DIR, 'invoice_status.json');
 const RESET_FILE = path.join(DATA_DIR, 'password_resets.json');
 const TICKETS_FILE = path.join(DATA_DIR, 'tickets_intake.json');
+const WA_CLIENTS_FILE = path.join(DATA_DIR, 'wa_clients.json');
+const NOTIFS_FILE = path.join(DATA_DIR, 'notifications.json');
 
 function loadJson(file, fallback = {}) {
   try {
@@ -61,12 +61,16 @@ let workspaces = loadJson(WORKSPACES_FILE, {});
 let invoiceStatus = loadJson(STATUS_FILE, {});
 let passwordResets = loadJson(RESET_FILE, {});
 let ticketsIntake = loadJson(TICKETS_FILE, { items: [] });
+let waClients = loadJson(WA_CLIENTS_FILE, {}); // key = normalized phone
+let notifications = loadJson(NOTIFS_FILE, { items: [] });
 
 function persistUsers() { saveJson(USERS_FILE, users); }
 function persistWorkspaces() { saveJson(WORKSPACES_FILE, workspaces); }
 function persistStatus() { saveJson(STATUS_FILE, invoiceStatus); }
 function persistResets() { saveJson(RESET_FILE, passwordResets); }
 function persistTickets() { saveJson(TICKETS_FILE, ticketsIntake); }
+function persistWaClients() { saveJson(WA_CLIENTS_FILE, waClients); }
+function persistNotifs() { saveJson(NOTIFS_FILE, notifications); }
 
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
@@ -89,9 +93,9 @@ function auth(req, res, next) {
 function extractStatusToken(req) {
   const q = req.query.token;
   const h = req.headers['x-status-token'];
-  const auth = req.headers.authorization;
+  const authH = req.headers.authorization;
   let t = q || h || '';
-  if (!t && auth && auth.toLowerCase().startsWith('bearer ')) t = auth.slice(7);
+  if (!t && authH && authH.toLowerCase().startsWith('bearer ')) t = authH.slice(7);
   return String(t || '').trim();
 }
 
@@ -99,20 +103,7 @@ function statusAuth(req, res, next) {
   const token = extractStatusToken(req);
   if (!token || !ALLOWED_STATUS_TOKENS.has(token)) {
     return res.type('text/plain').status(403).send(
-      [
-        '⚠️ Invalid status token.',
-        '',
-        'AutoResponder URL token must match Render STATUS_API_TOKEN.',
-        '',
-        '1) Render → saip-sync → Environment',
-        '2) Set STATUS_API_TOKEN=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
-        '3) Save & redeploy',
-        '',
-        'Test in browser (should NOT say invalid):',
-        PUBLIC_BASE + '/api/status/verify?token=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
-        '',
-        'Reply *menu* for options.',
-      ].join('\n')
+      '⚠️ Invalid status token.\n\nReply *menu* for options.'
     );
   }
   next();
@@ -122,7 +113,8 @@ function normalizePhone(p) {
   if (!p) return null;
   let s = String(p).replace(/\D/g, '');
   if (s.startsWith('0') && s.length === 10) s = '27' + s.slice(1);
-  return s || null;
+  if (s.length < 9) return null;
+  return s;
 }
 
 function moneyR(n) {
@@ -131,17 +123,33 @@ function moneyR(n) {
   return 'R' + v.toFixed(2);
 }
 
+function pushNotification(n) {
+  if (!Array.isArray(notifications.items)) notifications.items = [];
+  const item = {
+    id: uuidv4(),
+    type: n.type || 'info',
+    title: n.title || 'Update',
+    body: n.body || '',
+    payload: n.payload || {},
+    owner_user_id: n.owner_user_id || BUSINESS_OWNER_ID || null,
+    read: false,
+    created_at: now(),
+  };
+  notifications.items.unshift(item);
+  notifications.items = notifications.items.slice(0, 200);
+  persistNotifs();
+  return item;
+}
+
 function formatInvoiceText(inv, found) {
   if (!found || !inv) {
     return [
       '📄 *Invoice status*',
       '',
-      'Sorry — that invoice number was not found on the server.',
-      'Use the exact number (e.g. INV-0042).',
+      'Sorry — invoice not found or not linked to this WhatsApp number.',
+      'Use your exact number (e.g. INV-2026-0001).',
       '',
-      'If you just created it: open the app → Settings → Cloud → Push all invoice statuses.',
-      '',
-      'Reply *menu* for more options.',
+      'Reply *menu* for options.',
     ].join('\n');
   }
   const lines = [
@@ -157,30 +165,36 @@ function formatInvoiceText(inv, found) {
   return lines.join('\n');
 }
 
-/** Normalize invoice numbers: INV-42, inv 42, INV42 → INV-0042 style flexible match */
 function normalizeInvoiceQuery(raw) {
   let s = String(raw || '').trim().toUpperCase();
   s = s.replace(/\s+/g, '');
-  // INV42 → INV-42
   if (/^INV\d+$/.test(s)) s = 'INV-' + s.slice(3);
   return s;
 }
 
-function findInvoiceStatus(numberRaw) {
+function findInvoiceStatus(numberRaw, phoneLock) {
   const number = normalizeInvoiceQuery(numberRaw);
   if (!number) return null;
   const all = Object.values(invoiceStatus);
-  // exact
   let matches = all.filter(r => r.invoice_number === number);
   if (!matches.length) {
-    // loose: strip non-alphanumeric
     const loose = number.replace(/[^A-Z0-9]/g, '');
     matches = all.filter(r => String(r.invoice_number || '').replace(/[^A-Z0-9]/g, '') === loose);
+  }
+  // Phone lock: only return if client_phone matches (when phone provided)
+  if (phoneLock) {
+    const locked = matches.filter(r => r.client_phone && r.client_phone === phoneLock);
+    if (locked.length) matches = locked;
+    else if (matches.some(r => r.client_phone)) {
+      // Invoice exists but belongs to another phone — deny
+      return { denied: true };
+    }
   }
   matches.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
   return matches[0] || null;
 }
 
+// ——— Auth ———
 app.post('/api/auth/register', (req, res) => {
   const { email, password, name } = req.body || {};
   if (!email || !password || password.length < 6) return res.status(400).json({ error: 'Email and password (min 6 chars) required' });
@@ -239,6 +253,7 @@ app.post('/api/auth/reset-password', (req, res) => {
   res.json({ ok: true, message: 'Password updated' });
 });
 
+// ——— Workspace ———
 app.get('/api/workspace', auth, (req, res) => {
   const row = workspaces[req.user.id];
   if (!row) return res.status(404).json({ error: 'No workspace' });
@@ -254,8 +269,56 @@ app.put('/api/workspace', auth, (req, res) => {
   workspaces[req.user.id] = { data, version: newVersion, updated_at: ts };
   persistWorkspaces();
   syncInvoiceStatus(req.user.id, data);
+  // Index clients by phone for WA identity
+  indexWorkspaceClients(req.user.id, data);
   res.json({ ok: true, version: newVersion, updated_at: ts });
 });
+
+function indexWorkspaceClients(userId, data) {
+  const clients = data?.clients || [];
+  for (const c of clients) {
+    const phone = normalizePhone(c.phone);
+    if (!phone) continue;
+    const existing = waClients[phone];
+    if (existing && existing.source === 'whatsapp_register' && !existing.linked_client_id) {
+      // Keep WA registration; mark linked
+      waClients[phone] = {
+        ...existing,
+        name: existing.name || c.name,
+        email: existing.email || c.email,
+        linked_client_id: c.id,
+        owner_user_id: userId,
+        updated_at: now(),
+      };
+    } else if (!existing) {
+      waClients[phone] = {
+        id: uuidv4(),
+        phone,
+        name: c.name || null,
+        email: c.email || null,
+        company: c.company || null,
+        address: c.address || null,
+        source: 'app_sync',
+        linked_client_id: c.id,
+        owner_user_id: userId,
+        registered: true,
+        created_at: now(),
+        updated_at: now(),
+      };
+    } else {
+      waClients[phone] = {
+        ...existing,
+        name: c.name || existing.name,
+        email: c.email || existing.email,
+        linked_client_id: c.id || existing.linked_client_id,
+        owner_user_id: userId,
+        registered: true,
+        updated_at: now(),
+      };
+    }
+  }
+  persistWaClients();
+}
 
 app.post('/api/status/push', auth, (req, res) => {
   const invoices = Array.isArray(req.body?.invoices) ? req.body.invoices : [req.body];
@@ -304,46 +367,219 @@ function syncInvoiceStatus(userId, workspace) {
   persistStatus();
 }
 
-/** Public: check if AutoResponder token will work */
-app.get('/api/status/verify', (req, res) => {
-  const token = extractStatusToken(req);
-  if (!token) {
-    return res.type('text/plain').send('FAIL: no token provided. Add ?token=YOUR_TOKEN');
+// ——— WhatsApp client identity & registration ———
+
+/** Lookup: registered? plain text for AutoResponder */
+app.get('/api/wa/lookup', statusAuth, (req, res) => {
+  const phone = normalizePhone(req.query.phone || req.query.from || '');
+  if (!phone) {
+    return res.type('text/plain').send(
+      'Could not read your WhatsApp number.\nReply *register* to create a profile.\n\n0️⃣ Menu'
+    );
   }
-  if (ALLOWED_STATUS_TOKENS.has(token)) {
-    return res.type('text/plain').send('OK: token is valid. Use this token in AutoResponder.');
+  const c = waClients[phone];
+  if (c && c.registered) {
+    return res.type('text/plain').send(
+      [
+        '✅ *Profile found*',
+        '',
+        '👤 ' + (c.name || 'Client'),
+        c.email ? '📧 ' + c.email : null,
+        '📱 ' + phone,
+        '',
+        'Reply *menu* for options.',
+      ].filter(Boolean).join('\n')
+    );
   }
-  return res.type('text/plain').status(403).send(
-    'FAIL: token does not match server.\nSet Render STATUS_API_TOKEN to:\nSaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8'
+  return res.type('text/plain').send(
+    [
+      '👋 *Welcome — new contact*',
+      '',
+      'We do not have a client profile for this number yet.',
+      '',
+      'Please register (one message):',
+      '',
+      '*REGISTER*',
+      'Name: Your full name',
+      'Email: you@email.com',
+      'Company: (optional)',
+      'Address: (optional)',
+      '',
+      'Example:',
+      'REGISTER',
+      'Name: Thabo Nkosi',
+      'Email: thabo@mail.com',
+      'Company: TN Trading',
+      '',
+      '0️⃣ Menu',
+    ].join('\n')
   );
 });
 
-app.get('/api/status/invoice', statusAuth, (req, res) => {
-  // AutoResponder may pass number as $1, {number}, %1%, etc. if rule misconfigured
-  let number = req.query.number || req.query.n || req.query.invoice || '';
-  number = String(number).trim();
-  if (!number || number === '$1' || number === '{number}' || number === '%1%') {
+/**
+ * Register from WhatsApp form text or JSON.
+ * AutoResponder can POST body or use GET with query fields.
+ */
+app.all('/api/wa/register', statusAuth, (req, res) => {
+  const b = { ...(req.query || {}), ...(req.body || {}) };
+  let phone = normalizePhone(b.phone || b.from || b.wa_phone || '');
+  let name = (b.name || '').trim();
+  let email = (b.email || '').trim().toLowerCase();
+  let company = (b.company || '').trim();
+  let address = (b.address || '').trim();
+
+  // Parse free-form REGISTER block from message text
+  const text = String(b.text || b.message || b.body || '');
+  if (text) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const mName = line.match(/^(?:name)\s*[:\-]\s*(.+)$/i);
+      const mEmail = line.match(/^(?:email|e-mail)\s*[:\-]\s*(.+)$/i);
+      const mCo = line.match(/^(?:company|business)\s*[:\-]\s*(.+)$/i);
+      const mAddr = line.match(/^(?:address)\s*[:\-]\s*(.+)$/i);
+      const mPhone = line.match(/^(?:phone|mobile|cell)\s*[:\-]\s*(.+)$/i);
+      if (mName) name = mName[1].trim();
+      if (mEmail) email = mEmail[1].trim().toLowerCase();
+      if (mCo) company = mCo[1].trim();
+      if (mAddr) address = mAddr[1].trim();
+      if (mPhone) phone = normalizePhone(mPhone[1]) || phone;
+    }
+    // Single-line: REGISTER Name | email | company
+    if (!name && /register/i.test(text)) {
+      const cleaned = text.replace(/register/i, '').trim();
+      const parts = cleaned.split(/[|,;]/).map(s => s.trim()).filter(Boolean);
+      if (parts[0]) name = parts[0];
+      if (parts[1] && parts[1].includes('@')) email = parts[1].toLowerCase();
+      if (parts[2]) company = parts[2];
+    }
+  }
+
+  if (!phone) {
     return res.type('text/plain').send(
-      'Invoice number missing.\n\nReply with your invoice number only, e.g.\nINV-0042\n\n(If AutoResponder sent $1, fix the capture group in the rule pattern.)'
+      '⚠️ Phone missing.\nInclude your number or message from WhatsApp.\n\nReply *register* for the form.'
     );
   }
+  if (!name || name.length < 2) {
+    return res.type('text/plain').send(
+      [
+        '📝 *Registration form*',
+        '',
+        'Reply with:',
+        '',
+        '*REGISTER*',
+        'Name: Your full name',
+        'Email: you@email.com',
+        'Company: (optional)',
+        'Address: (optional)',
+        '',
+        '0️⃣ Menu',
+      ].join('\n')
+    );
+  }
+
+  const existing = waClients[phone];
+  const isNew = !existing || !existing.registered;
+  const profile = {
+    id: existing?.id || uuidv4(),
+    phone,
+    name,
+    email: email || existing?.email || null,
+    company: company || existing?.company || null,
+    address: address || existing?.address || null,
+    source: 'whatsapp_register',
+    registered: true,
+    linked_client_id: existing?.linked_client_id || null,
+    owner_user_id: existing?.owner_user_id || BUSINESS_OWNER_ID || null,
+    created_at: existing?.created_at || now(),
+    updated_at: now(),
+    pending_import: isNew || !existing?.linked_client_id,
+  };
+  waClients[phone] = profile;
+  persistWaClients();
+
+  if (isNew || profile.pending_import) {
+    pushNotification({
+      type: 'wa_client_new',
+      title: 'New WhatsApp client',
+      body: `${name} registered via WhatsApp (${phone})`,
+      payload: { phone, name, email, company, address, wa_client_id: profile.id },
+      owner_user_id: profile.owner_user_id,
+    });
+  }
+
+  return res.type('text/plain').send(
+    [
+      isNew ? '✅ *Profile created*' : '✅ *Profile updated*',
+      '',
+      '👤 ' + name,
+      email ? '📧 ' + email : null,
+      company ? '🏢 ' + company : null,
+      '📱 ' + phone,
+      '',
+      'You can now check invoices with your number (e.g. INV-2026-0001).',
+      '',
+      'Reply *menu* for options.',
+    ].filter(Boolean).join('\n')
+  );
+});
+
+/**
+ * Document / invoice — locked to WhatsApp phone when provided
+ * AutoResponder: pass phone from chat if available
+ */
+app.get('/api/wa/invoice', statusAuth, (req, res) => {
+  let number = String(req.query.number || req.query.n || '').trim();
+  const phone = normalizePhone(req.query.phone || req.query.from || '');
+  if (!number || number === '$1') {
+    return res.type('text/plain').send('Send your invoice number, e.g. INV-2026-0001');
+  }
+  const inv = findInvoiceStatus(number, phone || null);
+  if (inv && inv.denied) {
+    return res.type('text/plain').send(
+      [
+        '🔒 *Access denied*',
+        '',
+        'That invoice is not linked to this WhatsApp number.',
+        'Use the number on your account, or reply *register* if you are new.',
+        '',
+        '0️⃣ Menu',
+      ].join('\n')
+    );
+  }
+  if (!inv) return res.type('text/plain').send(formatInvoiceText(null, false));
+  return res.type('text/plain').send(formatInvoiceText(inv, true));
+});
+
+// Keep legacy invoice endpoint (optional phone lock)
+app.get('/api/status/verify', (req, res) => {
+  const token = extractStatusToken(req);
+  if (!token) return res.type('text/plain').send('FAIL: no token');
+  if (ALLOWED_STATUS_TOKENS.has(token)) return res.type('text/plain').send('OK: token valid');
+  return res.type('text/plain').status(403).send('FAIL: invalid token');
+});
+
+app.get('/api/status/invoice', statusAuth, (req, res) => {
+  let number = String(req.query.number || '').trim();
+  const phone = normalizePhone(req.query.phone || '');
+  if (!number || number === '$1') {
+    return res.type('text/plain').send('Invoice number required. Example: INV-2026-0001');
+  }
   const asJson = String(req.query.format || '').toLowerCase() === 'json';
-  const inv = findInvoiceStatus(number);
+  const inv = findInvoiceStatus(number, phone || null);
+  if (inv && inv.denied) {
+    if (!asJson) return res.type('text/plain').send('🔒 This invoice is not linked to your WhatsApp number.');
+    return res.status(403).json({ error: 'phone_mismatch' });
+  }
   if (!inv) {
     if (!asJson) return res.type('text/plain').send(formatInvoiceText(null, false));
-    return res.json({ ok: true, found: false, message: 'Invoice not found' });
+    return res.json({ ok: true, found: false });
   }
   if (!asJson) return res.type('text/plain').send(formatInvoiceText(inv, true));
-  res.json({
-    ok: true, found: true, invoice_number: inv.invoice_number, client_name: inv.client_name,
-    total: inv.total, balance_due: inv.balance_due, status: inv.status,
-    due_date: inv.due_date, updated_at: inv.updated_at, reply: formatInvoiceText(inv, true),
-  });
+  res.json({ ok: true, found: true, ...inv, reply: formatInvoiceText(inv, true) });
 });
 
 app.get('/api/status/client', statusAuth, (req, res) => {
-  let phone = (req.query.phone || '').replace(/\D/g, '');
-  if (phone.startsWith('0') && phone.length === 10) phone = '27' + phone.slice(1);
+  const phone = normalizePhone(req.query.phone || '');
   if (!phone) return res.status(400).json({ error: 'phone required' });
   const rows = Object.values(invoiceStatus)
     .filter(r => r.client_phone === phone && r.status !== 'paid')
@@ -351,6 +587,7 @@ app.get('/api/status/client', statusAuth, (req, res) => {
   res.json({ ok: true, found: rows.length > 0, count: rows.length, invoices: rows });
 });
 
+// ——— Tickets intake ———
 app.post('/api/tickets/intake', statusAuth, (req, res) => {
   const b = req.body || {};
   const customer_name = (b.customer_name || b.name || '').trim();
@@ -368,6 +605,12 @@ app.post('/api/tickets/intake', statusAuth, (req, res) => {
   ticketsIntake.items.unshift(ticket);
   ticketsIntake.items = ticketsIntake.items.slice(0, 500);
   persistTickets();
+  pushNotification({
+    type: 'ticket_intake',
+    title: 'New WhatsApp job request',
+    body: (customer_name || customer_phone || 'Client') + (issue ? ': ' + issue.slice(0, 80) : ''),
+    payload: ticket,
+  });
   res.json({ ok: true, ticket });
 });
 
@@ -386,21 +629,63 @@ app.patch('/api/tickets/intake/:id', auth, (req, res) => {
   res.json({ ok: true, ticket: item });
 });
 
+// ——— App notifications & pending WA clients ———
+app.get('/api/notifications', auth, (req, res) => {
+  const unreadOnly = String(req.query.unread || '') === '1';
+  let items = notifications.items || [];
+  // Optional filter by owner — if set on notification
+  items = items.filter(n => !n.owner_user_id || n.owner_user_id === req.user.id || !BUSINESS_OWNER_ID);
+  if (unreadOnly) items = items.filter(n => !n.read);
+  res.json({ ok: true, count: items.length, unread: items.filter(n => !n.read).length, notifications: items.slice(0, 50) });
+});
+
+app.post('/api/notifications/read', auth, (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+  const all = !!req.body?.all;
+  let n = 0;
+  for (const item of (notifications.items || [])) {
+    if (all || (ids && ids.includes(item.id))) {
+      if (!item.read) { item.read = true; n++; }
+    }
+  }
+  persistNotifs();
+  res.json({ ok: true, marked: n });
+});
+
+/** Pending WhatsApp clients for import into app */
+app.get('/api/wa/pending', auth, (req, res) => {
+  const list = Object.values(waClients)
+    .filter(c => c.pending_import || (c.source === 'whatsapp_register' && !c.linked_client_id))
+    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  res.json({ ok: true, count: list.length, clients: list });
+});
+
+app.post('/api/wa/pending/:phone/imported', auth, (req, res) => {
+  const phone = normalizePhone(req.params.phone);
+  if (!phone || !waClients[phone]) return res.status(404).json({ error: 'Not found' });
+  waClients[phone].pending_import = false;
+  waClients[phone].linked_client_id = req.body?.client_id || waClients[phone].linked_client_id;
+  waClients[phone].owner_user_id = req.user.id;
+  waClients[phone].updated_at = now();
+  persistWaClients();
+  res.json({ ok: true, client: waClients[phone] });
+});
+
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '1.2.2',
+    version: '1.3.0',
+    features: ['wa_register', 'phone_locked_invoices', 'notifications', 'auto_push'],
     autoresponder: {
-      verify: PUBLIC_BASE + '/api/status/verify?token=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
-      invoice: PUBLIC_BASE + '/api/status/invoice?number=INV-0001&token=SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8',
-      note: 'Plain text by default. Token is trimmed; default token always accepted.',
+      lookup: PUBLIC_BASE + '/api/wa/lookup?phone=27XXXXXXXXX&token=TOKEN',
+      register: PUBLIC_BASE + '/api/wa/register?token=TOKEN (POST text=REGISTER form)',
+      invoice: PUBLIC_BASE + '/api/wa/invoice?number=INV-2026-0001&phone=27…&token=TOKEN',
     },
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.2.2' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.3.0' }));
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.2.2 on port ${PORT}`);
-  console.log(`Status tokens loaded: ${ALLOWED_STATUS_TOKENS.size}`);
+  console.log(`SAIP Sync v1.3.0 on port ${PORT}`);
 });
