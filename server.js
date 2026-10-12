@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v1.4.0
- * WA identity · gated client menu · portal · notifications
+ * SA Invoice Pro – Sync Server v1.5.0
+ * AR brain · WA gated menu · portal · notifications
  */
 require('dotenv').config();
 const express = require('express');
@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const { mountPortal } = require('./portal');
 const { mountWaFlow } = require('./wa-flow');
+const { mountArBrain } = require('./ar-brain');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -307,7 +308,7 @@ app.get('/api/wa/lookup', statusAuth, (req, res) => {
   if (c && c.registered) {
     return res.type('text/plain').send(['✅ *Profile found*', '', '👤 ' + (c.name || 'Client'), c.email ? '📧 ' + c.email : null, '📱 ' + phone, '', 'Reply *menu* for options.'].filter(Boolean).join('\n'));
   }
-  return res.type('text/plain').send(['👋 *Welcome — new contact*', '', 'We do not have a client profile for this number yet.', '', 'Please register (one message):', '', '*REGISTER*', 'Name: Your full name', 'Email: you@email.com', 'Company: (optional)', 'Address: (optional)', '', '0️⃣ Menu'].join('\n'));
+  return res.type('text/plain').send(['👋 *Welcome — new contact*', '', 'Please register:', '', '*REGISTER*', 'Name: Your full name', 'Email: you@email.com', '', '0️⃣ Menu'].join('\n'));
 });
 
 app.all('/api/wa/register', statusAuth, (req, res) => {
@@ -319,39 +320,33 @@ app.all('/api/wa/register', statusAuth, (req, res) => {
   let address = (b.address || '').trim();
   const text = String(b.text || b.message || b.body || '');
   if (text) {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    for (const line of lines) {
+    for (const line of text.split(/\r?\n/).map(l => l.trim())) {
       const mName = line.match(/^(?:name)\s*[:\-]\s*(.+)$/i);
       const mEmail = line.match(/^(?:email|e-mail)\s*[:\-]\s*(.+)$/i);
       const mCo = line.match(/^(?:company|business)\s*[:\-]\s*(.+)$/i);
       const mAddr = line.match(/^(?:address)\s*[:\-]\s*(.+)$/i);
-      const mPhone = line.match(/^(?:phone|mobile|cell)\s*[:\-]\s*(.+)$/i);
       if (mName) name = mName[1].trim();
       if (mEmail) email = mEmail[1].trim().toLowerCase();
       if (mCo) company = mCo[1].trim();
       if (mAddr) address = mAddr[1].trim();
-      if (mPhone) phone = normalizePhone(mPhone[1]) || phone;
     }
   }
-  if (!phone) return res.type('text/plain').send('⚠️ Phone missing.\nReply *register* for the form.');
-  if (!name || name.length < 2) return res.type('text/plain').send(['📝 *Registration form*', '', '*REGISTER*', 'Name: Your full name', 'Email: you@email.com', '', '0️⃣ Menu'].join('\n'));
+  if (!phone) return res.type('text/plain').send('⚠️ Phone missing.');
+  if (!name || name.length < 2) return res.type('text/plain').send('📝 REGISTER form required.');
   const existing = waClients[phone];
   const isNew = !existing || !existing.registered;
-  const profile = { id: existing?.id || uuidv4(), phone, name, email: email || existing?.email || null, company: company || existing?.company || null, address: address || existing?.address || null, source: 'whatsapp_register', registered: true, linked_client_id: existing?.linked_client_id || null, owner_user_id: existing?.owner_user_id || BUSINESS_OWNER_ID || null, created_at: existing?.created_at || now(), updated_at: now(), pending_import: isNew || !existing?.linked_client_id };
-  waClients[phone] = profile;
+  waClients[phone] = { id: existing?.id || uuidv4(), phone, name, email: email || null, company: company || null, address: address || null, source: 'whatsapp_register', registered: true, linked_client_id: existing?.linked_client_id || null, owner_user_id: existing?.owner_user_id || BUSINESS_OWNER_ID || null, created_at: existing?.created_at || now(), updated_at: now(), pending_import: isNew || !existing?.linked_client_id };
   persistWaClients();
-  if (isNew || profile.pending_import) {
-    pushNotification({ type: 'wa_client_new', title: 'New WhatsApp client', body: `${name} registered via WhatsApp (${phone})`, payload: { phone, name, email, company, address, wa_client_id: profile.id }, owner_user_id: profile.owner_user_id });
-  }
-  return res.type('text/plain').send([isNew ? '✅ *Profile created*' : '✅ *Profile updated*', '', '👤 ' + name, email ? '📧 ' + email : null, '📱 ' + phone, '', 'Reply *menu* for options.'].filter(Boolean).join('\n'));
+  if (isNew) pushNotification({ type: 'wa_client_new', title: 'New WhatsApp client', body: `${name} (${phone})`, payload: { phone, name, email } });
+  return res.type('text/plain').send(['✅ *Profile ' + (isNew ? 'created' : 'updated') + '*', '', '👤 ' + name, '', '0️⃣ Menu'].join('\n'));
 });
 
 app.get('/api/wa/invoice', statusAuth, (req, res) => {
-  let number = String(req.query.number || req.query.n || '').trim();
-  const phone = normalizePhone(req.query.phone || req.query.from || '');
-  if (!number || number === '$1') return res.type('text/plain').send('Send your invoice number, e.g. INV-2026-0001');
+  let number = String(req.query.number || '').trim();
+  const phone = normalizePhone(req.query.phone || '');
+  if (!number || number === '$1') return res.type('text/plain').send('Send invoice number e.g. INV-2026-0001');
   const inv = findInvoiceStatus(number, phone || null);
-  if (inv && inv.denied) return res.type('text/plain').send(['🔒 *Access denied*', '', 'That invoice is not linked to this WhatsApp number.', '', '0️⃣ Menu'].join('\n'));
+  if (inv && inv.denied) return res.type('text/plain').send('🔒 Access denied.\n\n0️⃣ Menu');
   if (!inv) return res.type('text/plain').send(formatInvoiceText(null, false));
   return res.type('text/plain').send(formatInvoiceText(inv, true));
 });
@@ -366,116 +361,71 @@ app.get('/api/status/verify', (req, res) => {
 app.get('/api/status/invoice', statusAuth, (req, res) => {
   let number = String(req.query.number || '').trim();
   const phone = normalizePhone(req.query.phone || '');
-  if (!number || number === '$1') return res.type('text/plain').send('Invoice number required. Example: INV-2026-0001');
-  const asJson = String(req.query.format || '').toLowerCase() === 'json';
+  if (!number || number === '$1') return res.type('text/plain').send('Invoice number required.');
   const inv = findInvoiceStatus(number, phone || null);
-  if (inv && inv.denied) {
-    if (!asJson) return res.type('text/plain').send('🔒 This invoice is not linked to your WhatsApp number.');
-    return res.status(403).json({ error: 'phone_mismatch' });
-  }
-  if (!inv) {
-    if (!asJson) return res.type('text/plain').send(formatInvoiceText(null, false));
-    return res.json({ ok: true, found: false });
-  }
-  if (!asJson) return res.type('text/plain').send(formatInvoiceText(inv, true));
-  res.json({ ok: true, found: true, ...inv, reply: formatInvoiceText(inv, true) });
+  if (inv && inv.denied) return res.type('text/plain').send('🔒 Not linked to this number.');
+  if (!inv) return res.type('text/plain').send(formatInvoiceText(null, false));
+  return res.type('text/plain').send(formatInvoiceText(inv, true));
 });
 
 app.get('/api/status/client', statusAuth, (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
   if (!phone) return res.status(400).json({ error: 'phone required' });
-  const rows = Object.values(invoiceStatus).filter(r => r.client_phone === phone && r.status !== 'paid').sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 10);
-  res.json({ ok: true, found: rows.length > 0, count: rows.length, invoices: rows });
+  const rows = Object.values(invoiceStatus).filter(r => r.client_phone === phone && r.status !== 'paid').slice(0, 10);
+  res.json({ ok: true, count: rows.length, invoices: rows });
 });
 
 app.post('/api/tickets/intake', statusAuth, (req, res) => {
   const b = req.body || {};
-  const customer_name = (b.customer_name || b.name || '').trim();
-  const customer_phone = normalizePhone(b.customer_phone || b.phone);
-  const device = (b.device || '').trim();
-  const issue = (b.issue || b.description || '').trim();
-  if (!customer_name && !customer_phone) return res.status(400).json({ error: 'name or phone required' });
-  const ticket = { id: uuidv4(), source: b.source || 'whatsapp', customer_name: customer_name || null, customer_phone, device: device || null, issue: issue || null, urgency: (b.urgency || 'normal').toLowerCase(), status: 'new', created_at: now() };
+  const ticket = { id: uuidv4(), source: 'whatsapp', customer_name: (b.customer_name || b.name || '').trim() || null, customer_phone: normalizePhone(b.customer_phone || b.phone), device: (b.device || '').trim() || null, issue: (b.issue || '').trim() || null, urgency: (b.urgency || 'normal').toLowerCase(), status: 'new', created_at: now() };
   if (!Array.isArray(ticketsIntake.items)) ticketsIntake.items = [];
   ticketsIntake.items.unshift(ticket);
-  ticketsIntake.items = ticketsIntake.items.slice(0, 500);
   persistTickets();
-  pushNotification({ type: 'ticket_intake', title: 'New WhatsApp job request', body: (customer_name || customer_phone || 'Client') + (issue ? ': ' + issue.slice(0, 80) : ''), payload: ticket });
+  pushNotification({ type: 'ticket_intake', title: 'New job', body: ticket.customer_name || ticket.customer_phone || 'job', payload: ticket });
   res.json({ ok: true, ticket });
 });
 
 app.get('/api/tickets/intake', auth, (req, res) => {
-  const status = (req.query.status || 'new').toLowerCase();
-  const items = (ticketsIntake.items || []).filter(t => status === 'all' ? true : (t.status || 'new') === status);
+  const items = ticketsIntake.items || [];
   res.json({ ok: true, count: items.length, tickets: items });
 });
 
-app.patch('/api/tickets/intake/:id', auth, (req, res) => {
-  const item = (ticketsIntake.items || []).find(t => t.id === req.params.id);
-  if (!item) return res.status(404).json({ error: 'Ticket not found' });
-  if (req.body?.status) item.status = req.body.status;
-  item.updated_at = now();
-  persistTickets();
-  res.json({ ok: true, ticket: item });
-});
-
 app.get('/api/notifications', auth, (req, res) => {
-  const unreadOnly = String(req.query.unread || '') === '1';
   let items = notifications.items || [];
-  items = items.filter(n => !n.owner_user_id || n.owner_user_id === req.user.id || !BUSINESS_OWNER_ID);
-  if (unreadOnly) items = items.filter(n => !n.read);
   res.json({ ok: true, count: items.length, unread: items.filter(n => !n.read).length, notifications: items.slice(0, 50) });
 });
 
 app.post('/api/notifications/read', auth, (req, res) => {
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
   const all = !!req.body?.all;
-  let n = 0;
-  for (const item of (notifications.items || [])) {
-    if (all || (ids && ids.includes(item.id))) { if (!item.read) { item.read = true; n++; } }
-  }
+  for (const item of (notifications.items || [])) { if (all) item.read = true; }
   persistNotifs();
-  res.json({ ok: true, marked: n });
+  res.json({ ok: true });
 });
 
 app.get('/api/wa/pending', auth, (req, res) => {
-  const list = Object.values(waClients).filter(c => c.pending_import || (c.source === 'whatsapp_register' && !c.linked_client_id)).sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  const list = Object.values(waClients).filter(c => c.pending_import || (c.source === 'whatsapp_register' && !c.linked_client_id));
   res.json({ ok: true, count: list.length, clients: list });
 });
 
-app.post('/api/wa/pending/:phone/imported', auth, (req, res) => {
-  const phone = normalizePhone(req.params.phone);
-  if (!phone || !waClients[phone]) return res.status(404).json({ error: 'Not found' });
-  waClients[phone].pending_import = false;
-  waClients[phone].linked_client_id = req.body?.client_id || waClients[phone].linked_client_id;
-  waClients[phone].owner_user_id = req.user.id;
-  waClients[phone].updated_at = now();
-  persistWaClients();
-  res.json({ ok: true, client: waClients[phone] });
-});
-
 app.get('/', (req, res) => {
-  res.json({ name: 'SA Invoice Pro Sync', version: '1.4.0', features: ['wa_gated_menu', 'wa_register', 'phone_locked_docs', 'client_portal'] });
+  res.json({ name: 'SA Invoice Pro Sync', version: '1.5.0', features: ['ar_brain', 'wa_gated_menu', 'client_portal'], ar: PUBLIC_BASE + '/api/ar' });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.4.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.5.0' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
+mountArBrain(app, {
+  waClients, workspaces, invoiceStatus, ticketsIntake,
+  persistTickets, persistWaClients, pushNotification, now, uuidv4,
+  ALLOWED_STATUS_TOKENS, DEFAULT_STATUS_TOKEN,
+});
+
 mountWaFlow(app, {
-  statusAuth,
-  normalizePhone,
-  waClients,
-  workspaces,
-  invoiceStatus,
-  ticketsIntake,
-  persistTickets,
-  pushNotification,
-  now,
-  uuidv4,
-  PUBLIC_BASE,
+  statusAuth, normalizePhone, waClients, workspaces, invoiceStatus,
+  ticketsIntake, persistTickets, pushNotification, now, uuidv4, PUBLIC_BASE,
 });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.4.0 on port ${PORT}`);
+  console.log(`SAIP Sync v1.5.0 on port ${PORT}`);
 });
