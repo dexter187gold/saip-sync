@@ -160,7 +160,6 @@ function createBrainEngine(ctx) {
     getPayConfig,
   } = ctx;
 
-  // Short-term memory per session key (last intents)
   const memory = {};
 
   function sessionKey(phone, sender) {
@@ -263,7 +262,6 @@ function createBrainEngine(ctx) {
     if (!def) return menu(phone);
     let step = 0;
     const data = { ...(prefill || {}) };
-    // skip steps already prefilled
     while (step < def.steps.length && data[def.steps[step].key]) step++;
     setSess(phone, sender, { type, step, data });
     if (step >= def.steps.length) {
@@ -507,7 +505,6 @@ function createBrainEngine(ctx) {
     if (intent === 'pop') return startFlow('pop', phone, sender, {});
     if (intent === 'feedback') return startFlow('feedback', phone, sender, {});
     if (intent === 'human') {
-      // offer callback flow or instant ping
       pushNotification({
         type: 'inbox',
         title: 'Human requested',
@@ -645,7 +642,6 @@ function createBrainEngine(ctx) {
       return 'For live job status reply *7* (human) or send your job details.\nInvoice status: send the INV number.\n\n0️⃣ Menu';
     }
 
-    // unknown — helpful fallback with memory hint
     const recent = (memory[sk]?.intents || []).map((x) => x.intent).slice(0, 3);
     return [
       'I am not sure I caught that 🤔',
@@ -657,22 +653,18 @@ function createBrainEngine(ctx) {
       '• *I paid* — proof of payment',
       '• or type *price* / *warranty*',
       recent.length ? '\n_Recent: ' + recent.join(', ') + '_' : null,
-    ].filter(Boolean).join('\n');\n  }
+    ].filter(Boolean).join('\n');
+  }
 
-  /**
-   * Main entry: returns reply string
-   */
   function handleMessage(phone, sender, message) {
-    // Active multi-step first
     const flowReply = processActiveFlow(phone, sender, message);
     if (flowReply) return flowReply;
 
-    // Explicit callback keyword mid-chat
     if (/^callback$/i.test(String(message || '').trim())) {
       return startFlow('callback', phone, sender, isRegistered(phone) ? { name: profile(phone)?.name, phone } : {});
     }
 
-    const { intent, confidence } = detectIntent(message);
+    const { intent } = detectIntent(message);
     return handleIntent(intent, phone, sender, message);
   }
 
