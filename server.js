@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v3.1.0
- * Multi-step WA forms · online register/job · Q1–Q10
+ * SA Invoice Pro – Sync Server v3.2.0
+ * Advanced brain-engine · multi-step · online forms · Q1–Q10
  */
 require('dotenv').config();
 const express = require('express');
@@ -17,6 +17,7 @@ const { mountArBrain } = require('./ar-brain');
 const { mountQuarters } = require('./quarters');
 const { mountQuartersLate } = require('./quarters-late');
 const { mountFlows } = require('./flows');
+const { createBrainEngine } = require('./brain-engine');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -47,6 +48,7 @@ const RESET_FILE = path.join(DATA_DIR, 'password_resets.json');
 const TICKETS_FILE = path.join(DATA_DIR, 'tickets_intake.json');
 const WA_CLIENTS_FILE = path.join(DATA_DIR, 'wa_clients.json');
 const NOTIFS_FILE = path.join(DATA_DIR, 'notifications.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'wa_sessions.json');
 
 function loadJson(file, fallback = {}) {
   try {
@@ -69,6 +71,7 @@ let passwordResets = loadJson(RESET_FILE, {});
 let ticketsIntake = loadJson(TICKETS_FILE, { items: [] });
 let waClients = loadJson(WA_CLIENTS_FILE, {});
 let notifications = loadJson(NOTIFS_FILE, { items: [] });
+let sessions = loadJson(SESSIONS_FILE, {});
 
 function persistUsers() { saveJson(USERS_FILE, users); }
 function persistWorkspaces() { saveJson(WORKSPACES_FILE, workspaces); }
@@ -77,6 +80,7 @@ function persistResets() { saveJson(RESET_FILE, passwordResets); }
 function persistTickets() { saveJson(TICKETS_FILE, ticketsIntake); }
 function persistWaClients() { saveJson(WA_CLIENTS_FILE, waClients); }
 function persistNotifs() { saveJson(NOTIFS_FILE, notifications); }
+function persistSessions() { saveJson(SESSIONS_FILE, sessions); }
 
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
@@ -340,8 +344,8 @@ app.get('/api/wa/pending', auth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '3.1.0',
-    features: ['multi_step_forms', 'online_forms', 'ar_brain_v2.2', 'q1_q10'],
+    version: '3.2.0',
+    features: ['brain_engine_v3', 'intent_classifier', 'multi_step_flows', 'online_forms', 'q1_q10'],
     ar: PUBLIC_BASE + '/api/ar',
     forms: {
       register: PUBLIC_BASE + '/forms/register',
@@ -350,7 +354,7 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.1.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '3.2.0' }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
@@ -364,18 +368,34 @@ mountQuartersLate(app, {
   auth, statusAuth, now, pushNotification, PUBLIC_BASE,
 });
 
-const flowsApi = mountFlows(app, {
+// Online HTML forms (register / job)
+mountFlows(app, {
   DATA_DIR, loadJson, saveJson, waClients, persistWaClients,
   ticketsIntake, persistTickets, pushNotification, now, PUBLIC_BASE,
 });
 
-mountArBrain(app, {
-  waClients, workspaces, invoiceStatus, ticketsIntake,
-  persistTickets, persistWaClients, pushNotification, now, uuidv4,
-  ALLOWED_STATUS_TOKENS, DEFAULT_STATUS_TOKEN,
-  getPayConfig: () => quartersApi.getPayConfig(),
-  flows: flowsApi,
+const brain = createBrainEngine({
+  sessions,
+  persistSessions,
+  waClients,
+  persistWaClients,
+  ticketsIntake,
+  persistTickets,
+  invoiceStatus,
+  workspaces,
+  pushNotification,
+  now,
+  uuidv4,
   PUBLIC_BASE,
+  getPayConfig: () => quartersApi.getPayConfig(),
+});
+
+mountArBrain(app, {
+  ALLOWED_STATUS_TOKENS,
+  DEFAULT_STATUS_TOKEN,
+  brain,
+  PUBLIC_BASE,
+  now,
 });
 
 mountWaFlow(app, {
@@ -384,5 +404,5 @@ mountWaFlow(app, {
 });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v3.1.0 on port ${PORT}`);
+  console.log(`SAIP Sync v3.2.0 on port ${PORT}`);
 });
