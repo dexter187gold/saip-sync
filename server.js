@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro – Sync Server v1.3.0
- * WhatsApp client identity · registration · phone-locked documents · notifications
+ * SA Invoice Pro – Sync Server v1.3.1
+ * WA identity · registration · notifications · client portal
  */
 require('dotenv').config();
 const express = require('express');
@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const { mountPortal } = require('./portal');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -19,7 +20,7 @@ const DEFAULT_STATUS_TOKEN = 'SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8';
 const STATUS_TOKEN_RAW = process.env.STATUS_API_TOKEN || DEFAULT_STATUS_TOKEN;
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com';
 const RESET_TOKEN_HOURS = 1;
-const BUSINESS_OWNER_ID = process.env.BUSINESS_OWNER_USER_ID || null; // optional: pin notifications to one workspace
+const BUSINESS_OWNER_ID = process.env.BUSINESS_OWNER_USER_ID || null;
 
 function buildAllowedTokens() {
   const set = new Set();
@@ -61,7 +62,7 @@ let workspaces = loadJson(WORKSPACES_FILE, {});
 let invoiceStatus = loadJson(STATUS_FILE, {});
 let passwordResets = loadJson(RESET_FILE, {});
 let ticketsIntake = loadJson(TICKETS_FILE, { items: [] });
-let waClients = loadJson(WA_CLIENTS_FILE, {}); // key = normalized phone
+let waClients = loadJson(WA_CLIENTS_FILE, {});
 let notifications = loadJson(NOTIFS_FILE, { items: [] });
 
 function persistUsers() { saveJson(USERS_FILE, users); }
@@ -102,9 +103,7 @@ function extractStatusToken(req) {
 function statusAuth(req, res, next) {
   const token = extractStatusToken(req);
   if (!token || !ALLOWED_STATUS_TOKENS.has(token)) {
-    return res.type('text/plain').status(403).send(
-      '⚠️ Invalid status token.\n\nReply *menu* for options.'
-    );
+    return res.type('text/plain').status(403).send('⚠️ Invalid status token.\n\nReply *menu* for options.');
   }
   next();
 }
@@ -126,14 +125,9 @@ function moneyR(n) {
 function pushNotification(n) {
   if (!Array.isArray(notifications.items)) notifications.items = [];
   const item = {
-    id: uuidv4(),
-    type: n.type || 'info',
-    title: n.title || 'Update',
-    body: n.body || '',
-    payload: n.payload || {},
-    owner_user_id: n.owner_user_id || BUSINESS_OWNER_ID || null,
-    read: false,
-    created_at: now(),
+    id: uuidv4(), type: n.type || 'info', title: n.title || 'Update', body: n.body || '',
+    payload: n.payload || {}, owner_user_id: n.owner_user_id || BUSINESS_OWNER_ID || null,
+    read: false, created_at: now(),
   };
   notifications.items.unshift(item);
   notifications.items = notifications.items.slice(0, 200);
@@ -143,23 +137,9 @@ function pushNotification(n) {
 
 function formatInvoiceText(inv, found) {
   if (!found || !inv) {
-    return [
-      '📄 *Invoice status*',
-      '',
-      'Sorry — invoice not found or not linked to this WhatsApp number.',
-      'Use your exact number (e.g. INV-2026-0001).',
-      '',
-      'Reply *menu* for options.',
-    ].join('\n');
+    return ['📄 *Invoice status*', '', 'Sorry — invoice not found or not linked to this WhatsApp number.', 'Use your exact number (e.g. INV-2026-0001).', '', 'Reply *menu* for options.'].join('\n');
   }
-  const lines = [
-    '📄 *Invoice ' + inv.invoice_number + '*',
-    '',
-    '👤 ' + (inv.client_name || 'Client'),
-    '💵 Total: ' + moneyR(inv.total),
-    '💳 Balance: ' + moneyR(inv.balance_due),
-    '📊 Status: *' + String(inv.status || 'unpaid').toUpperCase() + '*',
-  ];
+  const lines = ['📄 *Invoice ' + inv.invoice_number + '*', '', '👤 ' + (inv.client_name || 'Client'), '💵 Total: ' + moneyR(inv.total), '💳 Balance: ' + moneyR(inv.balance_due), '📊 Status: *' + String(inv.status || 'unpaid').toUpperCase() + '*'];
   if (inv.due_date) lines.push('📅 Due: ' + String(inv.due_date).slice(0, 10));
   lines.push('', 'Reply *menu* for more options.');
   return lines.join('\n');
@@ -181,20 +161,15 @@ function findInvoiceStatus(numberRaw, phoneLock) {
     const loose = number.replace(/[^A-Z0-9]/g, '');
     matches = all.filter(r => String(r.invoice_number || '').replace(/[^A-Z0-9]/g, '') === loose);
   }
-  // Phone lock: only return if client_phone matches (when phone provided)
   if (phoneLock) {
     const locked = matches.filter(r => r.client_phone && r.client_phone === phoneLock);
     if (locked.length) matches = locked;
-    else if (matches.some(r => r.client_phone)) {
-      // Invoice exists but belongs to another phone — deny
-      return { denied: true };
-    }
+    else if (matches.some(r => r.client_phone)) return { denied: true };
   }
   matches.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
   return matches[0] || null;
 }
 
-// ——— Auth ———
 app.post('/api/auth/register', (req, res) => {
   const { email, password, name } = req.body || {};
   if (!email || !password || password.length < 6) return res.status(400).json({ error: 'Email and password (min 6 chars) required' });
@@ -253,7 +228,6 @@ app.post('/api/auth/reset-password', (req, res) => {
   res.json({ ok: true, message: 'Password updated' });
 });
 
-// ——— Workspace ———
 app.get('/api/workspace', auth, (req, res) => {
   const row = workspaces[req.user.id];
   if (!row) return res.status(404).json({ error: 'No workspace' });
@@ -269,7 +243,6 @@ app.put('/api/workspace', auth, (req, res) => {
   workspaces[req.user.id] = { data, version: newVersion, updated_at: ts };
   persistWorkspaces();
   syncInvoiceStatus(req.user.id, data);
-  // Index clients by phone for WA identity
   indexWorkspaceClients(req.user.id, data);
   res.json({ ok: true, version: newVersion, updated_at: ts });
 });
@@ -281,40 +254,11 @@ function indexWorkspaceClients(userId, data) {
     if (!phone) continue;
     const existing = waClients[phone];
     if (existing && existing.source === 'whatsapp_register' && !existing.linked_client_id) {
-      // Keep WA registration; mark linked
-      waClients[phone] = {
-        ...existing,
-        name: existing.name || c.name,
-        email: existing.email || c.email,
-        linked_client_id: c.id,
-        owner_user_id: userId,
-        updated_at: now(),
-      };
+      waClients[phone] = { ...existing, name: existing.name || c.name, email: existing.email || c.email, linked_client_id: c.id, owner_user_id: userId, updated_at: now() };
     } else if (!existing) {
-      waClients[phone] = {
-        id: uuidv4(),
-        phone,
-        name: c.name || null,
-        email: c.email || null,
-        company: c.company || null,
-        address: c.address || null,
-        source: 'app_sync',
-        linked_client_id: c.id,
-        owner_user_id: userId,
-        registered: true,
-        created_at: now(),
-        updated_at: now(),
-      };
+      waClients[phone] = { id: uuidv4(), phone, name: c.name || null, email: c.email || null, company: c.company || null, address: c.address || null, source: 'app_sync', linked_client_id: c.id, owner_user_id: userId, registered: true, created_at: now(), updated_at: now() };
     } else {
-      waClients[phone] = {
-        ...existing,
-        name: c.name || existing.name,
-        email: c.email || existing.email,
-        linked_client_id: c.id || existing.linked_client_id,
-        owner_user_id: userId,
-        registered: true,
-        updated_at: now(),
-      };
+      waClients[phone] = { ...existing, name: c.name || existing.name, email: c.email || existing.email, linked_client_id: c.id || existing.linked_client_id, owner_user_id: userId, registered: true, updated_at: now() };
     }
   }
   persistWaClients();
@@ -328,13 +272,7 @@ app.post('/api/status/push', auth, (req, res) => {
     if (!inv || !inv.invoice_number) continue;
     const number = normalizeInvoiceQuery(inv.invoice_number);
     const key = `${req.user.id}::${number}`;
-    invoiceStatus[key] = {
-      id: inv.id || uuidv4(), user_id: req.user.id, invoice_number: number,
-      client_name: inv.client_name || null, client_phone: normalizePhone(inv.client_phone),
-      total: inv.total ?? null, balance_due: inv.balance_due ?? null,
-      status: inv.status || 'unpaid', due_date: inv.due_date || null,
-      last_payment_at: inv.last_payment_at || null, updated_at: ts,
-    };
+    invoiceStatus[key] = { id: inv.id || uuidv4(), user_id: req.user.id, invoice_number: number, client_name: inv.client_name || null, client_phone: normalizePhone(inv.client_phone), total: inv.total ?? null, balance_due: inv.balance_due ?? null, status: inv.status || 'unpaid', due_date: inv.due_date || null, last_payment_at: inv.last_payment_at || null, updated_at: ts };
     count++;
   }
   persistStatus();
@@ -356,70 +294,21 @@ function syncInvoiceStatus(userId, workspace) {
     if (balance <= 0) status = 'paid';
     else if (paid > 0) status = 'partial';
     else if (inv.dueDate && new Date(inv.dueDate) < new Date()) status = 'overdue';
-    invoiceStatus[`${userId}::${number}`] = {
-      id: inv.id || uuidv4(), user_id: userId, invoice_number: number,
-      client_name: client.name || inv.clientName || null,
-      client_phone: normalizePhone(client.phone || inv.clientPhone),
-      total, balance_due: balance, status,
-      due_date: inv.dueDate || null, last_payment_at: inv.lastPaymentAt || null, updated_at: ts,
-    };
+    invoiceStatus[`${userId}::${number}`] = { id: inv.id || uuidv4(), user_id: userId, invoice_number: number, client_name: client.name || inv.clientName || null, client_phone: normalizePhone(client.phone || inv.clientPhone), total, balance_due: balance, status, due_date: inv.dueDate || null, last_payment_at: inv.lastPaymentAt || null, updated_at: ts };
   }
   persistStatus();
 }
 
-// ——— WhatsApp client identity & registration ———
-
-/** Lookup: registered? plain text for AutoResponder */
 app.get('/api/wa/lookup', statusAuth, (req, res) => {
   const phone = normalizePhone(req.query.phone || req.query.from || '');
-  if (!phone) {
-    return res.type('text/plain').send(
-      'Could not read your WhatsApp number.\nReply *register* to create a profile.\n\n0️⃣ Menu'
-    );
-  }
+  if (!phone) return res.type('text/plain').send('Could not read your WhatsApp number.\nReply *register* to create a profile.\n\n0️⃣ Menu');
   const c = waClients[phone];
   if (c && c.registered) {
-    return res.type('text/plain').send(
-      [
-        '✅ *Profile found*',
-        '',
-        '👤 ' + (c.name || 'Client'),
-        c.email ? '📧 ' + c.email : null,
-        '📱 ' + phone,
-        '',
-        'Reply *menu* for options.',
-      ].filter(Boolean).join('\n')
-    );
+    return res.type('text/plain').send(['✅ *Profile found*', '', '👤 ' + (c.name || 'Client'), c.email ? '📧 ' + c.email : null, '📱 ' + phone, '', 'Reply *menu* for options.'].filter(Boolean).join('\n'));
   }
-  return res.type('text/plain').send(
-    [
-      '👋 *Welcome — new contact*',
-      '',
-      'We do not have a client profile for this number yet.',
-      '',
-      'Please register (one message):',
-      '',
-      '*REGISTER*',
-      'Name: Your full name',
-      'Email: you@email.com',
-      'Company: (optional)',
-      'Address: (optional)',
-      '',
-      'Example:',
-      'REGISTER',
-      'Name: Thabo Nkosi',
-      'Email: thabo@mail.com',
-      'Company: TN Trading',
-      '',
-      '0️⃣ Menu',
-    ].join('\n')
-  );
+  return res.type('text/plain').send(['👋 *Welcome — new contact*', '', 'We do not have a client profile for this number yet.', '', 'Please register (one message):', '', '*REGISTER*', 'Name: Your full name', 'Email: you@email.com', 'Company: (optional)', 'Address: (optional)', '', '0️⃣ Menu'].join('\n'));
 });
 
-/**
- * Register from WhatsApp form text or JSON.
- * AutoResponder can POST body or use GET with query fields.
- */
 app.all('/api/wa/register', statusAuth, (req, res) => {
   const b = { ...(req.query || {}), ...(req.body || {}) };
   let phone = normalizePhone(b.phone || b.from || b.wa_phone || '');
@@ -427,8 +316,6 @@ app.all('/api/wa/register', statusAuth, (req, res) => {
   let email = (b.email || '').trim().toLowerCase();
   let company = (b.company || '').trim();
   let address = (b.address || '').trim();
-
-  // Parse free-form REGISTER block from message text
   const text = String(b.text || b.message || b.body || '');
   if (text) {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -444,113 +331,30 @@ app.all('/api/wa/register', statusAuth, (req, res) => {
       if (mAddr) address = mAddr[1].trim();
       if (mPhone) phone = normalizePhone(mPhone[1]) || phone;
     }
-    // Single-line: REGISTER Name | email | company
-    if (!name && /register/i.test(text)) {
-      const cleaned = text.replace(/register/i, '').trim();
-      const parts = cleaned.split(/[|,;]/).map(s => s.trim()).filter(Boolean);
-      if (parts[0]) name = parts[0];
-      if (parts[1] && parts[1].includes('@')) email = parts[1].toLowerCase();
-      if (parts[2]) company = parts[2];
-    }
   }
-
-  if (!phone) {
-    return res.type('text/plain').send(
-      '⚠️ Phone missing.\nInclude your number or message from WhatsApp.\n\nReply *register* for the form.'
-    );
-  }
-  if (!name || name.length < 2) {
-    return res.type('text/plain').send(
-      [
-        '📝 *Registration form*',
-        '',
-        'Reply with:',
-        '',
-        '*REGISTER*',
-        'Name: Your full name',
-        'Email: you@email.com',
-        'Company: (optional)',
-        'Address: (optional)',
-        '',
-        '0️⃣ Menu',
-      ].join('\n')
-    );
-  }
-
+  if (!phone) return res.type('text/plain').send('⚠️ Phone missing.\nReply *register* for the form.');
+  if (!name || name.length < 2) return res.type('text/plain').send(['📝 *Registration form*', '', '*REGISTER*', 'Name: Your full name', 'Email: you@email.com', '', '0️⃣ Menu'].join('\n'));
   const existing = waClients[phone];
   const isNew = !existing || !existing.registered;
-  const profile = {
-    id: existing?.id || uuidv4(),
-    phone,
-    name,
-    email: email || existing?.email || null,
-    company: company || existing?.company || null,
-    address: address || existing?.address || null,
-    source: 'whatsapp_register',
-    registered: true,
-    linked_client_id: existing?.linked_client_id || null,
-    owner_user_id: existing?.owner_user_id || BUSINESS_OWNER_ID || null,
-    created_at: existing?.created_at || now(),
-    updated_at: now(),
-    pending_import: isNew || !existing?.linked_client_id,
-  };
+  const profile = { id: existing?.id || uuidv4(), phone, name, email: email || existing?.email || null, company: company || existing?.company || null, address: address || existing?.address || null, source: 'whatsapp_register', registered: true, linked_client_id: existing?.linked_client_id || null, owner_user_id: existing?.owner_user_id || BUSINESS_OWNER_ID || null, created_at: existing?.created_at || now(), updated_at: now(), pending_import: isNew || !existing?.linked_client_id };
   waClients[phone] = profile;
   persistWaClients();
-
   if (isNew || profile.pending_import) {
-    pushNotification({
-      type: 'wa_client_new',
-      title: 'New WhatsApp client',
-      body: `${name} registered via WhatsApp (${phone})`,
-      payload: { phone, name, email, company, address, wa_client_id: profile.id },
-      owner_user_id: profile.owner_user_id,
-    });
+    pushNotification({ type: 'wa_client_new', title: 'New WhatsApp client', body: `${name} registered via WhatsApp (${phone})`, payload: { phone, name, email, company, address, wa_client_id: profile.id }, owner_user_id: profile.owner_user_id });
   }
-
-  return res.type('text/plain').send(
-    [
-      isNew ? '✅ *Profile created*' : '✅ *Profile updated*',
-      '',
-      '👤 ' + name,
-      email ? '📧 ' + email : null,
-      company ? '🏢 ' + company : null,
-      '📱 ' + phone,
-      '',
-      'You can now check invoices with your number (e.g. INV-2026-0001).',
-      '',
-      'Reply *menu* for options.',
-    ].filter(Boolean).join('\n')
-  );
+  return res.type('text/plain').send([isNew ? '✅ *Profile created*' : '✅ *Profile updated*', '', '👤 ' + name, email ? '📧 ' + email : null, '📱 ' + phone, '', 'Reply *menu* for options.'].filter(Boolean).join('\n'));
 });
 
-/**
- * Document / invoice — locked to WhatsApp phone when provided
- * AutoResponder: pass phone from chat if available
- */
 app.get('/api/wa/invoice', statusAuth, (req, res) => {
   let number = String(req.query.number || req.query.n || '').trim();
   const phone = normalizePhone(req.query.phone || req.query.from || '');
-  if (!number || number === '$1') {
-    return res.type('text/plain').send('Send your invoice number, e.g. INV-2026-0001');
-  }
+  if (!number || number === '$1') return res.type('text/plain').send('Send your invoice number, e.g. INV-2026-0001');
   const inv = findInvoiceStatus(number, phone || null);
-  if (inv && inv.denied) {
-    return res.type('text/plain').send(
-      [
-        '🔒 *Access denied*',
-        '',
-        'That invoice is not linked to this WhatsApp number.',
-        'Use the number on your account, or reply *register* if you are new.',
-        '',
-        '0️⃣ Menu',
-      ].join('\n')
-    );
-  }
+  if (inv && inv.denied) return res.type('text/plain').send(['🔒 *Access denied*', '', 'That invoice is not linked to this WhatsApp number.', '', '0️⃣ Menu'].join('\n'));
   if (!inv) return res.type('text/plain').send(formatInvoiceText(null, false));
   return res.type('text/plain').send(formatInvoiceText(inv, true));
 });
 
-// Keep legacy invoice endpoint (optional phone lock)
 app.get('/api/status/verify', (req, res) => {
   const token = extractStatusToken(req);
   if (!token) return res.type('text/plain').send('FAIL: no token');
@@ -561,9 +365,7 @@ app.get('/api/status/verify', (req, res) => {
 app.get('/api/status/invoice', statusAuth, (req, res) => {
   let number = String(req.query.number || '').trim();
   const phone = normalizePhone(req.query.phone || '');
-  if (!number || number === '$1') {
-    return res.type('text/plain').send('Invoice number required. Example: INV-2026-0001');
-  }
+  if (!number || number === '$1') return res.type('text/plain').send('Invoice number required. Example: INV-2026-0001');
   const asJson = String(req.query.format || '').toLowerCase() === 'json';
   const inv = findInvoiceStatus(number, phone || null);
   if (inv && inv.denied) {
@@ -581,13 +383,10 @@ app.get('/api/status/invoice', statusAuth, (req, res) => {
 app.get('/api/status/client', statusAuth, (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
   if (!phone) return res.status(400).json({ error: 'phone required' });
-  const rows = Object.values(invoiceStatus)
-    .filter(r => r.client_phone === phone && r.status !== 'paid')
-    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 10);
+  const rows = Object.values(invoiceStatus).filter(r => r.client_phone === phone && r.status !== 'paid').sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 10);
   res.json({ ok: true, found: rows.length > 0, count: rows.length, invoices: rows });
 });
 
-// ——— Tickets intake ———
 app.post('/api/tickets/intake', statusAuth, (req, res) => {
   const b = req.body || {};
   const customer_name = (b.customer_name || b.name || '').trim();
@@ -595,22 +394,12 @@ app.post('/api/tickets/intake', statusAuth, (req, res) => {
   const device = (b.device || '').trim();
   const issue = (b.issue || b.description || '').trim();
   if (!customer_name && !customer_phone) return res.status(400).json({ error: 'name or phone required' });
-  const ticket = {
-    id: uuidv4(), source: b.source || 'whatsapp',
-    customer_name: customer_name || null, customer_phone,
-    device: device || null, issue: issue || null,
-    urgency: (b.urgency || 'normal').toLowerCase(), status: 'new', created_at: now(),
-  };
+  const ticket = { id: uuidv4(), source: b.source || 'whatsapp', customer_name: customer_name || null, customer_phone, device: device || null, issue: issue || null, urgency: (b.urgency || 'normal').toLowerCase(), status: 'new', created_at: now() };
   if (!Array.isArray(ticketsIntake.items)) ticketsIntake.items = [];
   ticketsIntake.items.unshift(ticket);
   ticketsIntake.items = ticketsIntake.items.slice(0, 500);
   persistTickets();
-  pushNotification({
-    type: 'ticket_intake',
-    title: 'New WhatsApp job request',
-    body: (customer_name || customer_phone || 'Client') + (issue ? ': ' + issue.slice(0, 80) : ''),
-    payload: ticket,
-  });
+  pushNotification({ type: 'ticket_intake', title: 'New WhatsApp job request', body: (customer_name || customer_phone || 'Client') + (issue ? ': ' + issue.slice(0, 80) : ''), payload: ticket });
   res.json({ ok: true, ticket });
 });
 
@@ -629,11 +418,9 @@ app.patch('/api/tickets/intake/:id', auth, (req, res) => {
   res.json({ ok: true, ticket: item });
 });
 
-// ——— App notifications & pending WA clients ———
 app.get('/api/notifications', auth, (req, res) => {
   const unreadOnly = String(req.query.unread || '') === '1';
   let items = notifications.items || [];
-  // Optional filter by owner — if set on notification
   items = items.filter(n => !n.owner_user_id || n.owner_user_id === req.user.id || !BUSINESS_OWNER_ID);
   if (unreadOnly) items = items.filter(n => !n.read);
   res.json({ ok: true, count: items.length, unread: items.filter(n => !n.read).length, notifications: items.slice(0, 50) });
@@ -644,19 +431,14 @@ app.post('/api/notifications/read', auth, (req, res) => {
   const all = !!req.body?.all;
   let n = 0;
   for (const item of (notifications.items || [])) {
-    if (all || (ids && ids.includes(item.id))) {
-      if (!item.read) { item.read = true; n++; }
-    }
+    if (all || (ids && ids.includes(item.id))) { if (!item.read) { item.read = true; n++; } }
   }
   persistNotifs();
   res.json({ ok: true, marked: n });
 });
 
-/** Pending WhatsApp clients for import into app */
 app.get('/api/wa/pending', auth, (req, res) => {
-  const list = Object.values(waClients)
-    .filter(c => c.pending_import || (c.source === 'whatsapp_register' && !c.linked_client_id))
-    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  const list = Object.values(waClients).filter(c => c.pending_import || (c.source === 'whatsapp_register' && !c.linked_client_id)).sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
   res.json({ ok: true, count: list.length, clients: list });
 });
 
@@ -672,20 +454,13 @@ app.post('/api/wa/pending/:phone/imported', auth, (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.json({
-    name: 'SA Invoice Pro Sync',
-    version: '1.3.0',
-    features: ['wa_register', 'phone_locked_invoices', 'notifications', 'auto_push'],
-    autoresponder: {
-      lookup: PUBLIC_BASE + '/api/wa/lookup?phone=27XXXXXXXXX&token=TOKEN',
-      register: PUBLIC_BASE + '/api/wa/register?token=TOKEN (POST text=REGISTER form)',
-      invoice: PUBLIC_BASE + '/api/wa/invoice?number=INV-2026-0001&phone=27…&token=TOKEN',
-    },
-  });
+  res.json({ name: 'SA Invoice Pro Sync', version: '1.3.1', features: ['wa_register', 'phone_locked_invoices', 'notifications', 'client_portal'], portal: PUBLIC_BASE + '/portal/:token' });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.3.0' }));
+app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '1.3.1' }));
+
+mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v1.3.0 on port ${PORT}`);
+  console.log(`SAIP Sync v1.3.1 on port ${PORT}`);
 });
