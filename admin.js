@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const { ensureDefaultAdmin, DEFAULT_EMAIL, DEFAULT_PASSWORD } = require('./admin-seed');
 
 function mountAdmin(app, ctx) {
   const {
@@ -32,11 +33,26 @@ function mountAdmin(app, ctx) {
     path,
   } = ctx;
 
-  const adminEmail = String(ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+  try {
+    ensureDefaultAdmin({
+      users,
+      persistUsers,
+      workspaces,
+      persistWorkspaces,
+      now,
+      adminEmail: ADMIN_EMAIL || process.env.ADMIN_EMAIL || DEFAULT_EMAIL,
+      adminPassword: process.env.ADMIN_PASSWORD || DEFAULT_PASSWORD,
+    });
+  } catch (e) {
+    console.error('[admin] seed failed', e.message);
+  }
+
+  const adminEmail = String(ADMIN_EMAIL || process.env.ADMIN_EMAIL || DEFAULT_EMAIL || '').toLowerCase().trim();
 
   function isAdminUser(user) {
     if (!user) return false;
     if (adminEmail && String(user.email || '').toLowerCase() === adminEmail) return true;
+    if (String(user.email || '').toLowerCase() === DEFAULT_EMAIL) return true;
     if (user.role === 'admin') return true;
     return false;
   }
@@ -58,8 +74,6 @@ function mountAdmin(app, ctx) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
   }
-
-  // ——— APIs (unchanged functional core – the plan remains sound) ———
 
   app.get('/api/admin/me', adminAuth, (req, res) => {
     res.json({
@@ -223,7 +237,6 @@ function mountAdmin(app, ctx) {
     res.json({ ok: true });
   });
 
-  // ——— HTML Portal – Brain's Acme Labs Control Center ———
   app.get('/admin', (req, res) => {
     res.type('html').send(`<!DOCTYPE html>
 <html lang="en">
@@ -279,11 +292,11 @@ th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;
     <p class="sub">Acme Labs · SA Invoice Pro · World Domination Edition</p>
     <p class="hero-quote">"Pinky, are you pondering what I'm pondering?"<br/>"I think so, Brain, but how will we take over the invoicing world with only one admin login?"</p>
     <label>Email</label>
-    <input id="email" type="email" placeholder="admin@email.com" autocomplete="username"/>
+    <input id="email" type="email" placeholder="admin@sainvoice.pro" value="admin@sainvoice.pro" autocomplete="username"/>
     <label>Password</label>
     <input id="password" type="password" placeholder="••••••••" autocomplete="current-password"/>
     <button class="btn" style="width:100%" onclick="login()">Enter the Lab</button>
-    <p class="narf">Narf! Use the cloud account listed as ADMIN_EMAIL on the server.</p>
+    <p class="narf">Default: <b>admin@sainvoice.pro</b> / <b>Admin@SAIP2026!</b> · Override via ADMIN_EMAIL &amp; ADMIN_PASSWORD on the server.</p>
   </div>
 
   <div id="appView" class="hidden">
@@ -341,12 +354,20 @@ async function login(){
   try{
     const email=document.getElementById('email').value.trim();
     const password=document.getElementById('password').value;
+    if(!email||!password){ toast('Email and password required'); return; }
     const data=await api('/api/auth/login',{method:'POST',body:{email,password}});
     token=data.token; localStorage.setItem('saip_admin_token',token);
-    await api('/api/admin/me');
+    try {
+      await api('/api/admin/me');
+    } catch (err) {
+      token=''; localStorage.removeItem('saip_admin_token');
+      throw new Error('Logged in, but this account is not an admin. Use admin@sainvoice.pro or set ADMIN_EMAIL on the server.');
+    }
     showApp();
   }catch(e){ toast(e.message||'Login failed · Zort!'); }
 }
+document.getElementById('password').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
+document.getElementById('email').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
 function logout(){
   token=''; localStorage.removeItem('saip_admin_token');
   document.getElementById('appView').classList.add('hidden');
