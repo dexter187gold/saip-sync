@@ -3,80 +3,58 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Brain Control Lab · SA Invoice Pro</title>
+<title>Brain Control Lab v4.2 · SA Invoice Pro</title>
 <style>
-:root{
-  --bg:#0c0a14;--card:#16122a;--line:#2a2448;--text:#f0e6ff;--muted:#a89bc8;
-  --accent:#e879f9;--accent2:#a78bfa;--pinky:#f9a8d4;--ok:#34d399;--danger:#f87171;--warn:#fbbf24;
-}
-*{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+:root{--bg:#0c0a14;--card:#16122a;--line:#2a2448;--text:#f0e6ff;--muted:#a89bc8;--accent:#e879f9;--ok:#34d399;--danger:#f87171;--blue:#38bdf8}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 .wrap{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:1.45rem;margin:0 0 4px;background:linear-gradient(90deg,var(--accent),var(--pinky));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.sub{color:var(--muted);font-size:.9rem;margin:0 0 8px}
-.hero-quote{color:var(--pinky);font-style:italic;font-size:.85rem;margin:0 0 16px;opacity:.9}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,.35)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-.stat{background:#0f0b1e;border-radius:14px;padding:14px;border:1px solid var(--line);transition:transform .15s}
-.stat:hover{transform:translateY(-2px);border-color:var(--accent)}
-.stat b{display:block;font-size:1.35rem;color:var(--pinky)}
-.stat span{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
-input,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0f0c1a;color:var(--text);margin:6px 0;font:inherit}
-button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:9px 14px;font-weight:600;margin:3px 4px 3px 0}
-.btn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a0533}
-.btn-danger{background:var(--danger);color:#1a0533}
-.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
-.btn-ok{background:var(--ok);color:#052e16}
-.btn-warn{background:var(--warn);color:#422006}
-.btn-sm{padding:6px 10px;font-size:.8rem}
-table{width:100%;border-collapse:collapse;font-size:.84rem}
-th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-th{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em}
+h1{font-size:1.45rem;margin:0 0 4px;background:linear-gradient(90deg,#e879f9,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:var(--muted);font-size:.88rem;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,.35)}
+input,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0f0b1e;color:var(--text);margin:6px 0;font:inherit}
+button,.btn{padding:9px 14px;border-radius:10px;border:0;background:linear-gradient(135deg,#e879f9,#a855f7);color:#1a0a20;font-weight:700;cursor:pointer;margin:3px;font:inherit}
+.btn{display:inline-block;text-decoration:none}
+.btn-ok{background:linear-gradient(135deg,#34d399,#059669);color:#042f2e}
+.btn-danger,.btn-danger{background:#f87171;color:#1a0a20}
+.btn-outline,button.secondary{background:#2a2448;color:var(--text)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
 .tab{background:#0f0b1e;border:1px solid var(--line);color:var(--muted);padding:9px 14px;border-radius:999px;cursor:pointer;transition:all .15s}
 .tab.on{color:#fff;border-color:var(--accent);background:linear-gradient(135deg,#2e1065,#4a044e)}
-.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.hidden{display:none!important}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
-.badge-ok{background:#064e3b;color:var(--ok)}
-.badge-warn{background:#78350f;color:var(--warn)}
-.badge-danger{background:#7f1d1d;color:var(--danger)}
-.badge-muted{background:#1e1b4b;color:var(--muted)}
-#toast{position:fixed;bottom:18px;right:18px;background:#221a3a;border:1px solid var(--line);padding:12px 16px;border-radius:12px;display:none;z-index:99;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
-.login-wrap{max-width:400px;margin:8vh auto}
-.err{color:var(--danger);font-size:.9rem;margin-top:8px}
-.muted{color:var(--muted)}
-.actions{display:flex;flex-wrap:wrap;gap:4px}
-label.lbl{font-size:.75rem;color:var(--muted);display:block;margin-top:8px}
+.hidden{display:none}.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#2a2448;font-size:.72rem}.pill.ok{background:#065f46;color:#a7f3d0}
+table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#0f0b1e;border:1px solid var(--line);border-radius:12px;padding:14px}.stat .l{font-size:.72rem;color:var(--muted);text-transform:uppercase}.stat .v{font-size:1.25rem;font-weight:700;margin-top:4px}
+#toast{position:fixed;bottom:16px;right:16px;background:#221a3a;border:1px solid var(--line);padding:12px 16px;border-radius:12px;display:none;z-index:99;max-width:320px}
+.brand{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+a{color:var(--blue)}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div id="login" class="login-wrap card">
-    <h1>Brain Control Lab</h1>
-    <p class="sub">Acme Labs · SA Invoice Pro · Admin</p>
-    <p class="hero-quote">"Pinky, are you pondering what I am pondering?"</p>
-    <label class="lbl">Email</label>
+  <div id="login" class="card">
+    <div class="brand">PC REPAIR DEX · SAIP</div>
+    <h1>Enter the Lab</h1>
+    <p class="sub">Brain Control Lab — admin portal for WhatsApp, tickets, invoices & outbox</p>
     <input id="email" type="email" placeholder="Email" value="admin@sainvoice.pro" autocomplete="username"/>
-    <label class="lbl">Password</label>
     <input id="password" type="password" placeholder="Password" autocomplete="current-password"/>
-    <button type="button" id="loginBtn" class="btn" style="width:100%;margin-top:12px">Enter the Lab</button>
-    <p id="loginErr" class="err" style="display:none"></p>
-    <p class="muted" style="font-size:12px;margin-top:14px">Default: admin@sainvoice.pro · Admin@SAIP2026!</p>
+    <div class="row" style="margin-top:10px">
+      <button type="button" id="btn-login">Enter the Lab</button>
+    </div>
+    <p id="login-err" class="sub" style="color:var(--danger)"></p>
   </div>
 
   <div id="app" class="hidden">
-    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
       <div>
+        <div class="brand">World Domination Mega Pack</div>
         <h1>Brain Control Lab</h1>
-        <p class="sub" id="who">—</p>
+        <p class="sub" id="who"></p>
       </div>
-      <div class="row">
-        <button type="button" class="btn-ghost btn-sm" id="refreshBtn">↻ Refresh</button>
-        <button type="button" class="btn-ghost" id="logoutBtn">Log out</button>
-      </div>
+      <button type="button" class="btn-outline" id="btn-logout">Logout</button>
     </div>
-    <div class="card"><div class="grid" id="stats"></div></div>
-    <div class="row" style="margin-bottom:14px">
+
+    <div class="tabs">
       <button type="button" class="tab on" data-tab="dash">Dashboard</button>
       <button type="button" class="tab" data-tab="wa">WA Clients</button>
       <button type="button" class="tab" data-tab="tickets">Tickets</button>
@@ -86,6 +64,7 @@ label.lbl{font-size:.75rem;color:var(--muted);display:block;margin-top:8px}
       <button type="button" class="tab" data-tab="notifs">Notifications</button>
       <button type="button" class="tab" data-tab="tools">Tools</button>
     </div>
+
     <div id="panel-dash" class="card"></div>
     <div id="panel-wa" class="card hidden"></div>
     <div id="panel-tickets" class="card hidden"></div>
@@ -99,375 +78,319 @@ label.lbl{font-size:.75rem;color:var(--muted);display:block;margin-top:8px}
 <div id="toast"></div>
 <script>
 (function () {
-  var API = location.origin;
-  var token = localStorage.getItem('saip_admin_token') || '';
+  var token = localStorage.getItem("saip_admin_token") || "";
 
   function toast(msg) {
-    var el = document.getElementById('toast');
+    var el = document.getElementById("toast");
     el.textContent = msg;
-    el.style.display = 'block';
-    setTimeout(function () { el.style.display = 'none'; }, 4000);
+    el.style.display = "block";
+    setTimeout(function () { el.style.display = "none"; }, 4000);
   }
-
+  function showLoginError(msg) {
+    document.getElementById("login-err").textContent = msg || "";
+  }
   function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/"/g, '&quot;');
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-
   function api(path, opts) {
     opts = opts || {};
-    var headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = 'Bearer ' + token;
-    return fetch(API + path, {
-      method: opts.method || 'GET',
-      headers: headers,
+    var h = { "Content-Type": "application/json" };
+    if (token) h.Authorization = "Bearer " + token;
+    return fetch(path, {
+      method: opts.method || "GET",
+      headers: h,
       body: opts.body ? JSON.stringify(opts.body) : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (data) {
-        if (!r.ok) throw new Error(data.error || r.statusText || 'Request failed');
+        if (!r.ok) throw new Error(data.error || r.statusText || "Request failed");
         return data;
       });
     });
   }
 
   function showApp() {
-    document.getElementById('login').classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
+    document.getElementById("login").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
     refreshAll();
   }
 
   function login() {
-    var email = document.getElementById('email').value.trim();
-    var password = document.getElementById('password').value;
-    var err = document.getElementById('loginErr');
-    err.style.display = 'none';
-    api('/api/auth/login', { method: 'POST', body: { email: email, password: password } })
+    showLoginError("");
+    var email = document.getElementById("email").value.trim();
+    var password = document.getElementById("password").value;
+    api("/api/auth/login", { method: "POST", body: { email: email, password: password } })
       .then(function (d) {
         token = d.token;
-        localStorage.setItem('saip_admin_token', token);
-        document.getElementById('who').textContent = (d.user && d.user.email) || email;
+        localStorage.setItem("saip_admin_token", token);
+        document.getElementById("who").textContent = (d.user && d.user.email) || email;
         showApp();
       })
-      .catch(function (e) {
-        err.style.display = 'block';
-        err.textContent = e.message || 'Login failed';
-      });
+      .catch(function (e) { showLoginError(e.message); });
   }
 
-  document.getElementById('loginBtn').onclick = login;
-  document.getElementById('password').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') login();
+  document.getElementById("btn-login").onclick = login;
+  document.getElementById("password").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") login();
   });
-  document.getElementById('logoutBtn').onclick = function () {
-    token = '';
-    localStorage.removeItem('saip_admin_token');
+  document.getElementById("btn-logout").onclick = function () {
+    token = "";
+    localStorage.removeItem("saip_admin_token");
     location.reload();
   };
-  document.getElementById('refreshBtn').onclick = function () { refreshAll(); toast('Refreshed'); };
 
-  document.querySelectorAll('[data-tab]').forEach(function (b) {
+  document.querySelectorAll("[data-tab]").forEach(function (b) {
     b.onclick = function () {
-      document.querySelectorAll('[data-tab]').forEach(function (x) { x.classList.remove('on'); });
-      b.classList.add('on');
-      var tab = b.getAttribute('data-tab');
-      ['dash','wa','tickets','invoices','outbox','users','notifs','tools'].forEach(function (n) {
-        document.getElementById('panel-' + n).classList.toggle('hidden', n !== tab);
+      document.querySelectorAll("[data-tab]").forEach(function (x) { x.classList.remove("on"); });
+      b.classList.add("on");
+      var tab = b.getAttribute("data-tab");
+      ["dash", "wa", "tickets", "invoices", "outbox", "users", "notifs", "tools"].forEach(function (n) {
+        document.getElementById("panel-" + n).classList.toggle("hidden", n !== tab);
       });
-      if (tab === 'wa') loadWa();
-      if (tab === 'tickets') loadTickets();
-      if (tab === 'invoices') loadInvoices();
-      if (tab === 'outbox') loadOutbox();
-      if (tab === 'users') loadUsers();
-      if (tab === 'notifs') loadNotifs();
-      if (tab === 'tools') loadTools();
-      if (tab === 'dash') loadDash();
+      if (tab === "wa") loadWa().catch(function (e) { toast(e.message); });
+      if (tab === "tickets") loadTickets().catch(function (e) { toast(e.message); });
+      if (tab === "invoices") loadInvoices().catch(function (e) { toast(e.message); });
+      if (tab === "outbox") loadOutbox().catch(function (e) { toast(e.message); });
+      if (tab === "users") loadUsers().catch(function (e) { toast(e.message); });
+      if (tab === "notifs") loadNotifs().catch(function (e) { toast(e.message); });
+      if (tab === "tools") loadTools();
+      if (tab === "dash") loadDash().catch(function (e) { toast(e.message); });
     };
   });
 
-  function money(n) {
-    return 'R' + Number(n || 0).toFixed(2);
-  }
-
-  function refreshAll() {
-    api('/api/admin/stats').then(function (d) {
-      var s = d.stats || {};
-      document.getElementById('stats').innerHTML = [
-        ['Users', s.users],
-        ['WA clients', s.wa_clients],
-        ['Registered', s.wa_registered],
-        ['Pending import', s.wa_pending_import || 0],
-        ['Tickets', s.tickets_total],
-        ['Open tickets', s.tickets_open],
-        ['Invoices', s.invoice_status_rows],
-        ['Outstanding', money(s.outstanding_ar)],
-        ['Outbox', s.outbox_pending || 0],
-        ['Notifs', s.notifications]
-      ].map(function (x) {
-        return '<div class="stat"><b>' + esc(x[1]) + '</b><span>' + esc(x[0]) + '</span></div>';
-      }).join('');
-      loadDash();
-    }).catch(function (e) { toast(e.message); });
-  }
-
   function loadDash() {
-    document.getElementById('panel-dash').innerHTML =
-      '<h3 style="margin-top:0">Dashboard</h3>' +
-      '<p class="muted">Live control center for WhatsApp clients, job cards, invoices, and AutoResponder outbox.</p>' +
-      '<div class="row" style="margin-top:12px">' +
-      '<button type="button" class="btn btn-sm" data-act="goto" data-tab="wa">Manage WA clients</button>' +
-      '<button type="button" class="btn btn-sm" data-act="goto" data-tab="tickets">Open tickets</button>' +
-      '<button type="button" class="btn btn-sm" data-act="goto" data-tab="outbox">Queue WhatsApp message</button>' +
-      '<button type="button" class="btn-ghost btn-sm" data-act="goto" data-tab="tools">Phone lookup / tools</button>' +
-      '</div>' +
-      '<p class="muted" style="margin-top:16px;font-size:13px">Tip: Force-register a number if AutoResponder still says not registered. Use Outbox to push status messages manually.</p>';
+    return api("/api/admin/stats").then(function (d) {
+      var s = d.stats || {};
+      document.getElementById("panel-dash").innerHTML =
+        '<div class="row" style="justify-content:space-between"><h3 style="margin:0">Dashboard</h3>'
+        + '<button type="button" class="btn-outline" data-act="refresh-dash">Refresh</button></div>'
+        + '<div class="stat-grid">'
+        + '<div class="stat"><div class="l">Users</div><div class="v">' + (s.users || 0) + '</div></div>'
+        + '<div class="stat"><div class="l">WA clients</div><div class="v">' + (s.wa_clients || 0) + '</div></div>'
+        + '<div class="stat"><div class="l">Registered</div><div class="v">' + (s.wa_registered || 0) + '</div></div>'
+        + '<div class="stat"><div class="l">Pending import</div><div class="v">' + (s.wa_pending_import || 0) + '</div></div>'
+        + '<div class="stat"><div class="l">Tickets open</div><div class="v">' + (s.tickets_open || 0) + '</div></div>'
+        + '<div class="stat"><div class="l">Tickets total</div><div class="v">' + (s.tickets_total || 0) + '</div></div>'
+        + '<div class="stat"><div class="l">Outstanding AR</div><div class="v">R' + Number(s.outstanding_ar || 0).toFixed(2) + '</div></div>'
+        + '<div class="stat"><div class="l">Outbox pending</div><div class="v">' + (s.outbox_pending || 0) + '</div></div>'
+        + '</div>'
+        + '<p class="sub">Generated ' + esc(d.generated_at || '') + ' · Forms: <a href="/forms/register" target="_blank">Register</a> · <a href="/forms/job" target="_blank">Job</a></p>';
+    });
   }
 
   function loadWa() {
-    api('/api/admin/wa-clients').then(function (d) {
+    return api("/api/admin/wa-clients").then(function (d) {
       var rows = (d.clients || []).map(function (c) {
-        var reg = c.registered
-          ? '<span class="badge badge-ok">registered</span>'
-          : '<span class="badge badge-danger">not reg</span>';
-        var pend = c.pending_import ? ' <span class="badge badge-warn">pending import</span>' : '';
-        return '<tr>' +
-          '<td><strong>' + esc(c.name) + '</strong><div class="muted" style="font-size:12px">' + esc(c.email || '') + '</div></td>' +
-          '<td>' + esc(c.phone) + '</td>' +
-          '<td>' + reg + pend + '<div class="muted" style="font-size:11px">' + esc(c.source || '') + '</div></td>' +
-          '<td class="actions">' +
-          '<button type="button" class="btn-ok btn-sm" data-act="force-reg" data-phone="' + esc(c.phone) + '">Force register</button>' +
-          '<button type="button" class="btn-ghost btn-sm" data-act="mark-imported" data-phone="' + esc(c.phone) + '">Clear pending</button>' +
-          '<button type="button" class="btn-danger btn-sm" data-act="delwa" data-phone="' + esc(c.phone) + '">Remove</button>' +
-          '</td></tr>';
-      }).join('');
-      document.getElementById('panel-wa').innerHTML =
-        '<h3 style="margin-top:0">WhatsApp clients (' + (d.count || 0) + ')</h3>' +
-        '<p class="muted" style="font-size:13px">Force register fixes “not registered” on AutoResponder. Clear pending after importing into the invoice app.</p>' +
-        '<table><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
-        (rows || '<tr><td colspan="4" class="muted">None yet — customers register via WhatsApp or /forms/register</td></tr>') +
-        '</tbody></table>';
-    }).catch(function (e) { toast(e.message); });
+        var phone = esc(c.phone);
+        return "<tr>"
+          + "<td><div>" + esc(c.name || "—") + '</div><div style="color:var(--muted);font-size:.75rem">' + phone + "</div></td>"
+          + "<td>" + esc(c.email || "—") + "</td>"
+          + "<td>" + (c.registered ? '<span class="pill ok">yes</span>' : '<span class="pill">no</span>') + (c.pending_import ? ' <span class="pill">pending</span>' : "") + "</td>"
+          + "<td>" + esc(c.source || "") + "</td>"
+          + '<td class="row" style="flex-wrap:wrap">'
+          + (c.registered ? "" : '<button type="button" class="btn-ok" data-act="force-wa" data-phone="' + phone + '">Mark reg</button>')
+          + '<button type="button" class="btn" data-act="queue-msg" data-phone="' + phone + '">Message</button>'
+          + '<button type="button" class="btn-danger" data-act="delwa" data-phone="' + phone + '">Remove</button></td></tr>';
+      }).join("");
+      document.getElementById("panel-wa").innerHTML =
+        '<h3 style="margin:0 0 12px">WhatsApp clients (' + (d.count || 0) + ')</h3>'
+        + '<p class="sub">Mark reg stops “not registered” on AutoResponder. Message queues WhatsApp outbox text.</p>'
+        + "<table><thead><tr><th>Client</th><th>Email</th><th>Reg</th><th>Source</th><th>Actions</th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="5">None yet — customers register via WhatsApp or /forms/register</td></tr>')
+        + "</tbody></table>";
+    });
   }
 
   function loadTickets() {
-    api('/api/admin/tickets').then(function (d) {
+    return api("/api/admin/tickets").then(function (d) {
       var rows = (d.tickets || []).map(function (t) {
-        return '<tr>' +
-          '<td><strong>' + esc(t.device || t.id) + '</strong><div class="muted" style="font-size:12px">' + esc(t.issue || '') + '</div></td>' +
-          '<td>' + esc(t.customer_name || '') + '<div class="muted" style="font-size:12px">' + esc(t.customer_phone || '') + '</div></td>' +
-          '<td><span class="badge badge-muted">' + esc(t.status || 'new') + '</span> · ' + esc(t.urgency || '') + '</td>' +
-          '<td class="actions">' +
-          '<button type="button" class="btn-ok btn-sm" data-act="ticket" data-id="' + esc(t.id) + '" data-status="in_progress">In progress</button>' +
-          '<button type="button" class="btn-warn btn-sm" data-act="ticket" data-id="' + esc(t.id) + '" data-status="resolved">Resolved</button>' +
-          '<button type="button" class="btn-ghost btn-sm" data-act="ticket" data-id="' + esc(t.id) + '" data-status="closed">Closed</button>' +
-          '<button type="button" class="btn-danger btn-sm" data-act="delticket" data-id="' + esc(t.id) + '">Delete</button>' +
-          '</td></tr>';
-      }).join('');
-      document.getElementById('panel-tickets').innerHTML =
-        '<h3 style="margin-top:0">Job card intake (' + (d.count || 0) + ')</h3>' +
-        '<table><thead><tr><th>Job</th><th>Customer</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
-        (rows || '<tr><td colspan="4" class="muted">No intake tickets</td></tr>') +
-        '</tbody></table>';
-    }).catch(function (e) { toast(e.message); });
+        var id = esc(t.id);
+        return "<tr>"
+          + "<td>" + esc(t.customer_name || "—") + '<div style="color:var(--muted);font-size:.75rem">' + esc(t.customer_phone || "") + "</div></td>"
+          + "<td>" + esc(t.device || "—") + "</td>"
+          + "<td>" + esc(t.issue || "—") + "</td>"
+          + "<td>" + esc((t.urgency || "") + " / " + (t.status || "new")) + "</td>"
+          + '<td class="row">'
+          + '<button type="button" class="btn-ok" data-act="ticket" data-id="' + id + '" data-status="in_progress">Start</button>'
+          + '<button type="button" class="btn" data-act="ticket" data-id="' + id + '" data-status="resolved">Resolve</button>'
+          + '<button type="button" class="btn-outline" data-act="ticket" data-id="' + id + '" data-status="closed">Close</button>'
+          + '<button type="button" class="btn-danger" data-act="delticket" data-id="' + id + '">Del</button></td></tr>';
+      }).join("");
+      document.getElementById("panel-tickets").innerHTML =
+        '<h3 style="margin:0 0 12px">Intake tickets (' + (d.count || 0) + ')</h3>'
+        + "<table><thead><tr><th>Customer</th><th>Device</th><th>Issue</th><th>Urgency / Status</th><th>Actions</th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="5">No intake tickets</td></tr>')
+        + "</tbody></table>";
+    });
   }
 
   function loadInvoices() {
-    api('/api/admin/invoices').then(function (d) {
+    return api("/api/admin/invoices").then(function (d) {
       var rows = (d.invoices || []).map(function (i) {
-        return '<tr><td>' + esc(i.invoice_number) + '</td><td>' + esc(i.client_name) + '<div class="muted" style="font-size:12px">' + esc(i.client_phone || '') + '</div></td><td>' + money(i.balance_due ?? i.total) + '</td><td><span class="badge badge-muted">' + esc(i.status) + '</span></td></tr>';
-      }).join('');
-      document.getElementById('panel-invoices').innerHTML =
-        '<h3 style="margin-top:0">Invoice status index (' + (d.count || 0) + ')</h3>' +
-        '<p class="muted" style="font-size:13px">Pushed from the invoice app cloud sync — used for WhatsApp invoice lookups.</p>' +
-        '<table><thead><tr><th>Number</th><th>Client</th><th>Balance</th><th>Status</th></tr></thead><tbody>' +
-        (rows || '<tr><td colspan="4" class="muted">None synced yet</td></tr>') +
-        '</tbody></table>';
-    }).catch(function (e) { toast(e.message); });
+        return "<tr><td>" + esc(i.invoice_number) + "</td><td>" + esc(i.client_name || "—") + "</td><td>" + esc(i.client_phone || "") + "</td><td>R" + Number(i.balance_due ?? i.total || 0).toFixed(2) + "</td><td>" + esc(i.status) + "</td></tr>";
+      }).join("");
+      document.getElementById("panel-invoices").innerHTML =
+        '<div class="row" style="justify-content:space-between"><h3 style="margin:0">Invoice status index</h3><button type="button" class="btn-outline" data-act="refresh-inv">Refresh</button></div>'
+        + "<table><thead><tr><th>Number</th><th>Client</th><th>Phone</th><th>Balance</th><th>Status</th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="5">None synced yet</td></tr>')
+        + "</tbody></table>";
+    });
   }
 
   function loadOutbox() {
-    api('/api/admin/outbox').then(function (d) {
+    return api("/api/admin/outbox").then(function (d) {
       var rows = (d.messages || []).map(function (m) {
-        var st = m.delivered ? '<span class="badge badge-ok">sent</span>' : '<span class="badge badge-warn">pending</span>';
-        return '<tr><td>' + esc(m.phone) + '</td><td style="max-width:280px;white-space:pre-wrap;font-size:12px">' + esc(String(m.message || '').slice(0, 200)) + '</td><td>' + st + '</td><td>' +
-          (!m.delivered ? '<button type="button" class="btn-ghost btn-sm" data-act="ack" data-id="' + esc(m.id) + '">Ack</button>' : '') +
-          '</td></tr>';
-      }).join('');
-      document.getElementById('panel-outbox').innerHTML =
-        '<h3 style="margin-top:0">WhatsApp outbox (' + (d.pending || 0) + ' pending)</h3>' +
-        '<p class="muted" style="font-size:13px">Messages AutoResponder can poll via /api/ar/outbox. Queue a custom message below.</p>' +
-        '<div class="card" style="background:#0f0b1e;margin:12px 0">' +
-        '<label class="lbl">Phone (27…)</label><input id="obPhone" placeholder="27821234567"/>' +
-        '<label class="lbl">Message</label><textarea id="obMsg" rows="4" placeholder="Status update text…"></textarea>' +
-        '<button type="button" class="btn" data-act="queue-msg">Queue message</button>' +
-        '</div>' +
-        '<table><thead><tr><th>Phone</th><th>Message</th><th>Status</th><th></th></tr></thead><tbody>' +
-        (rows || '<tr><td colspan="4" class="muted">Outbox empty</td></tr>') +
-        '</tbody></table>';
-    }).catch(function (e) { toast(e.message); });
+        return "<tr><td>" + esc(m.phone) + "</td><td style=\"max-width:280px;white-space:pre-wrap;font-size:.8rem\">" + esc((m.message || "").slice(0, 180)) + "</td><td>" + (m.delivered ? "sent" : "pending") + "</td><td>" + (m.delivered ? "" : '<button type="button" class="btn-outline" data-act="ack-outbox" data-id="' + esc(m.id) + '">Ack</button>') + "</td></tr>";
+      }).join("");
+      document.getElementById("panel-outbox").innerHTML =
+        '<h3 style="margin:0 0 12px">WhatsApp outbox (' + (d.pending || 0) + " pending)</h3>"
+        + '<div class="card" style="background:#0f0b1e"><label class="sub">Queue a message</label>'
+        + '<div class="row"><input id="ob-phone" placeholder="2782…" style="flex:1"/><textarea id="ob-msg" rows="2" placeholder="Message text" style="flex:2"></textarea>'
+        + '<button type="button" class="btn" data-act="queue-outbox">Queue</button>'
+        + '<button type="button" class="btn-outline" data-act="ack-all-outbox">Ack all</button>'
+        + '<button type="button" class="btn-outline" data-act="refresh-outbox">Refresh</button></div></div>'
+        + "<table><thead><tr><th>Phone</th><th>Message</th><th>Status</th><th></th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="4">Empty</td></tr>')
+        + "</tbody></table>";
+    });
   }
 
   function loadUsers() {
-    api('/api/admin/users').then(function (d) {
+    return api("/api/admin/users").then(function (d) {
       var rows = (d.users || []).map(function (u) {
-        return '<tr><td>' + esc(u.email) + '<div class="muted" style="font-size:12px">' + esc(u.name || '') + '</div></td><td>' + esc(u.role) + '</td><td>' + esc(String(u.created_at || '').slice(0, 10)) + '</td><td class="actions">' +
-          '<button type="button" class="btn-warn btn-sm" data-act="reset-pw" data-id="' + esc(u.id) + '">Reset password</button>' +
-          (u.role !== 'admin' ? '<button type="button" class="btn-danger btn-sm" data-act="deluser" data-id="' + esc(u.id) + '">Delete</button>' : '') +
-          '</td></tr>';
-      }).join('');
-      document.getElementById('panel-users').innerHTML =
-        '<h3 style="margin-top:0">Users (' + (d.count || 0) + ')</h3>' +
-        '<table><thead><tr><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody>' +
-        (rows || '') + '</tbody></table>';
-    }).catch(function (e) { toast(e.message); });
+        return "<tr><td>" + esc(u.email) + "</td><td>" + esc(u.role) + "</td><td>" + esc((u.created_at || "").slice(0, 10)) + "</td>"
+          + '<td class="row"><button type="button" class="btn-outline" data-act="reset" data-id="' + esc(u.id) + '">Reset pw</button>'
+          + '<button type="button" class="btn-danger" data-act="deluser" data-id="' + esc(u.id) + '" data-email="' + esc(u.email) + '">Delete</button></td></tr>';
+      }).join("");
+      document.getElementById("panel-users").innerHTML =
+        '<div class="row" style="justify-content:space-between"><h3 style="margin:0">Users</h3><button type="button" class="btn-outline" data-act="refresh-users">Refresh</button></div>'
+        + "<table><thead><tr><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody>"
+        + (rows || "") + "</tbody></table>";
+    });
   }
 
   function loadNotifs() {
-    api('/api/admin/notifications').then(function (d) {
+    return api("/api/admin/notifications").then(function (d) {
       var rows = (d.notifications || []).map(function (n) {
-        return '<tr><td><strong>' + esc(n.title) + '</strong><div class="muted" style="font-size:12px">' + esc(n.body) + '</div></td><td>' + esc(String(n.created_at || '').slice(0, 19).replace('T', ' ')) + '</td></tr>';
-      }).join('');
-      document.getElementById('panel-notifs').innerHTML =
-        '<div class="row" style="justify-content:space-between"><h3 style="margin:0">Notifications</h3>' +
-        '<button type="button" class="btn-danger btn-sm" data-act="clear-notifs">Clear all</button></div>' +
-        '<table style="margin-top:12px"><thead><tr><th>Message</th><th>When</th></tr></thead><tbody>' +
-        (rows || '<tr><td colspan="2" class="muted">None</td></tr>') + '</tbody></table>';
-    }).catch(function (e) { toast(e.message); });
+        return "<tr><td>" + esc(n.title) + "</td><td>" + esc(n.body) + "</td><td>" + esc((n.created_at || "").slice(0, 19)) + "</td></tr>";
+      }).join("");
+      document.getElementById("panel-notifs").innerHTML =
+        '<div class="row" style="justify-content:space-between"><h3 style="margin:0">Notifications</h3>'
+        + '<button type="button" class="btn-danger" data-act="clear-notifs">Clear all</button></div>'
+        + "<table><thead><tr><th>Title</th><th>Body</th><th>When</th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="3">None</td></tr>') + "</tbody></table>";
+    });
   }
 
   function loadTools() {
-    document.getElementById('panel-tools').innerHTML =
-      '<h3 style="margin-top:0">Tools</h3>' +
-      '<p class="muted">Look up a WhatsApp number across clients, tickets and invoices.</p>' +
-      '<label class="lbl">Phone</label><input id="lookupPhone" placeholder="0821234567 or 2782…"/>' +
-      '<button type="button" class="btn" data-act="lookup">Lookup</button>' +
-      '<div id="lookupResult" style="margin-top:14px"></div>' +
-      '<hr style="border-color:var(--line);margin:20px 0"/>' +
-      '<p class="muted" style="font-size:13px">Forms: <a style="color:var(--accent)" href="/forms/register" target="_blank">Register</a> · <a style="color:var(--accent)" href="/forms/job" target="_blank">Job card</a></p>' +
-      '<p class="muted" style="font-size:13px">AR brain: <code>/api/ar</code> · Status token: set STATUS_API_TOKEN on Render</p>';
+    document.getElementById("panel-tools").innerHTML =
+      '<h3 style="margin:0 0 12px">Tools</h3>'
+      + '<div class="card" style="background:#0f0b1e">'
+      + '<label class="sub">Lookup WhatsApp number</label>'
+      + '<div class="row"><input id="tool-phone" placeholder="0821234567 or 2782…" style="flex:1"/>'
+      + '<button type="button" class="btn" data-act="lookup">Lookup</button></div>'
+      + '<pre id="tool-result" style="margin-top:12px;font-size:.8rem;white-space:pre-wrap;color:var(--muted)">Enter a number to see registration + tickets.</pre></div>'
+      + '<div class="card" style="background:#0f0b1e;margin-top:12px">'
+      + '<label class="sub">Force-register number (marks registered=true)</label>'
+      + '<div class="row"><input id="force-phone" placeholder="Phone digits" style="flex:1"/>'
+      + '<input id="force-name" placeholder="Name" style="flex:1"/>'
+      + '<button type="button" class="btn-ok" data-act="force-reg">Force register</button></div></div>'
+      + '<p class="sub">Forms: <a href="/forms/register" target="_blank">Register</a> · <a href="/forms/job" target="_blank">Job</a> · <a href="/health" target="_blank">Health</a> · <a href="/api/ar" target="_blank">AR brain</a></p>';
   }
 
-  document.body.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-act]');
+  function refreshAll() {
+    return loadDash().catch(function (e) { toast(e.message); });
+  }
+
+  document.body.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-act]");
     if (!btn) return;
-    var act = btn.getAttribute('data-act');
-
-    if (act === 'goto') {
-      var tab = btn.getAttribute('data-tab');
-      var tabBtn = document.querySelector('[data-tab="' + tab + '"]');
-      if (tabBtn) tabBtn.click();
-      return;
-    }
-
-    if (act === 'delwa') {
-      if (!confirm('Remove this WA client?')) return;
-      api('/api/admin/wa-clients/' + encodeURIComponent(btn.getAttribute('data-phone')), { method: 'DELETE' })
-        .then(function () { toast('Removed'); loadWa(); refreshAll(); })
+    var act = btn.getAttribute("data-act");
+    if (act === "refresh-users") {
+      loadUsers().catch(function (err) { toast(err.message); });
+    } else if (act === "reset") {
+      if (!confirm("Generate a temporary password for this user?")) return;
+      api("/api/admin/users/" + btn.getAttribute("data-id") + "/reset-password", { method: "POST", body: {} })
+        .then(function (d) { prompt("Temporary password (copy now):", d.temporary_password); toast("Password reset for " + d.email); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'force-reg') {
-      api('/api/admin/wa-clients/' + encodeURIComponent(btn.getAttribute('data-phone')) + '/force-register', { method: 'POST', body: {} })
-        .then(function () { toast('Force registered — they can use menu now'); loadWa(); refreshAll(); })
+    } else if (act === "deluser") {
+      var email = btn.getAttribute("data-email");
+      if (!confirm("Delete account " + email + " and their workspace?")) return;
+      api("/api/admin/users/" + btn.getAttribute("data-id"), { method: "DELETE" })
+        .then(function () { toast("Deleted " + email); return loadUsers(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'mark-imported') {
-      api('/api/admin/wa-clients/' + encodeURIComponent(btn.getAttribute('data-phone')), {
-        method: 'PATCH',
-        body: { pending_import: false }
-      }).then(function () { toast('Pending cleared'); loadWa(); })
+    } else if (act === "delwa") {
+      var phone = btn.getAttribute("data-phone");
+      if (!confirm("Remove WA profile " + phone + "?")) return;
+      api("/api/admin/wa-clients/" + phone, { method: "DELETE" })
+        .then(function () { toast("Removed"); return loadWa(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'ticket') {
-      api('/api/admin/tickets/' + encodeURIComponent(btn.getAttribute('data-id')), {
-        method: 'PATCH',
-        body: { status: btn.getAttribute('data-status') }
-      }).then(function () { toast('Ticket updated'); loadTickets(); refreshAll(); })
+    } else if (act === "ticket") {
+      api("/api/admin/tickets/" + btn.getAttribute("data-id"), { method: "PATCH", body: { status: btn.getAttribute("data-status") } })
+        .then(function () { toast("Ticket updated"); return loadTickets(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'delticket') {
-      if (!confirm('Delete this intake ticket?')) return;
-      api('/api/admin/tickets/' + encodeURIComponent(btn.getAttribute('data-id')), { method: 'DELETE' })
-        .then(function () { toast('Deleted'); loadTickets(); refreshAll(); })
+    } else if (act === "delticket") {
+      if (!confirm("Delete this intake ticket?")) return;
+      api("/api/admin/tickets/" + btn.getAttribute("data-id"), { method: "DELETE" })
+        .then(function () { toast("Deleted"); return loadTickets(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'queue-msg') {
-      var phone = (document.getElementById('obPhone') || {}).value || '';
-      var message = (document.getElementById('obMsg') || {}).value || '';
-      api('/api/admin/outbox/queue', { method: 'POST', body: { phone: phone, message: message } })
-        .then(function () { toast('Queued for WhatsApp'); loadOutbox(); refreshAll(); })
+    } else if (act === "clear-notifs") {
+      api("/api/admin/notifications/clear", { method: "POST", body: {} })
+        .then(function () { toast("Cleared"); return loadNotifs(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'ack') {
-      api('/api/admin/outbox/ack', { method: 'POST', body: { id: btn.getAttribute('data-id') } })
-        .then(function () { toast('Acked'); loadOutbox(); })
+    } else if (act === "refresh-dash") {
+      loadDash().catch(function (err) { toast(err.message); });
+    } else if (act === "refresh-inv") {
+      loadInvoices().catch(function (err) { toast(err.message); });
+    } else if (act === "refresh-outbox") {
+      loadOutbox().catch(function (err) { toast(err.message); });
+    } else if (act === "queue-outbox") {
+      var ph = (document.getElementById("ob-phone") || {}).value || "";
+      var msg = (document.getElementById("ob-msg") || {}).value || "";
+      api("/api/admin/outbox/queue", { method: "POST", body: { phone: ph, message: msg } })
+        .then(function () { toast("Queued"); return loadOutbox(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'reset-pw') {
-      if (!confirm('Reset password for this user?')) return;
-      api('/api/admin/users/' + encodeURIComponent(btn.getAttribute('data-id')) + '/reset-password', { method: 'POST', body: {} })
-        .then(function (d) { toast('Temp password: ' + (d.temporary_password || '')); alert('Temporary password:\n' + d.temporary_password); })
+    } else if (act === "ack-outbox") {
+      api("/api/admin/outbox/ack", { method: "POST", body: { id: btn.getAttribute("data-id") } })
+        .then(function () { toast("Acked"); return loadOutbox(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'deluser') {
-      if (!confirm('Delete this user and workspace?')) return;
-      api('/api/admin/users/' + encodeURIComponent(btn.getAttribute('data-id')), { method: 'DELETE' })
-        .then(function () { toast('User deleted'); loadUsers(); refreshAll(); })
+    } else if (act === "ack-all-outbox") {
+      api("/api/admin/outbox/ack", { method: "POST", body: {} })
+        .then(function (d) { toast("Acked " + (d.acked || 0)); return loadOutbox(); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'clear-notifs') {
-      api('/api/admin/notifications/clear', { method: 'POST', body: {} })
-        .then(function () { toast('Cleared'); loadNotifs(); refreshAll(); })
+    } else if (act === "lookup") {
+      var p = (document.getElementById("tool-phone") || {}).value || "";
+      api("/api/admin/lookup?phone=" + encodeURIComponent(p))
+        .then(function (d) { document.getElementById("tool-result").textContent = JSON.stringify(d, null, 2); })
         .catch(function (err) { toast(err.message); });
-      return;
-    }
-
-    if (act === 'lookup') {
-      var p = (document.getElementById('lookupPhone') || {}).value || '';
-      api('/api/admin/lookup?phone=' + encodeURIComponent(p))
-        .then(function (d) {
-          var el = document.getElementById('lookupResult');
-          if (!d.client) {
-            el.innerHTML = '<p class="muted">No WA client for ' + esc(d.phone) + '. Use Force register on WA tab after adding, or register via form.</p>';
-            return;
-          }
-          el.innerHTML = '<div class="card" style="background:#0f0b1e">' +
-            '<p><strong>' + esc(d.client.name) + '</strong> · ' + (d.registered ? '<span class="badge badge-ok">registered</span>' : '<span class="badge badge-danger">not registered</span>') + '</p>' +
-            '<p class="muted">' + esc(d.client.phone) + ' · ' + esc(d.client.email || '') + ' · ' + esc(d.client.source || '') + '</p>' +
-            '<p>Tickets: ' + (d.tickets || []).length + ' · Invoices: ' + (d.invoices || []).length + '</p>' +
-            (!d.registered ? '<button type="button" class="btn-ok btn-sm" data-act="force-reg" data-phone="' + esc(d.phone) + '">Force register this number</button>' : '') +
-            '</div>';
-        })
+    } else if (act === "queue-msg") {
+      var qphone = btn.getAttribute("data-phone");
+      var qmsg = prompt("Message to queue for " + qphone + ":", "Hi — PC REPAIR DEX here. Reply *menu* for options.");
+      if (!qmsg) return;
+      api("/api/admin/outbox/queue", { method: "POST", body: { phone: qphone, message: qmsg } })
+        .then(function () { toast("Queued for " + qphone); })
         .catch(function (err) { toast(err.message); });
-      return;
+    } else if (act === "force-reg") {
+      var fp = (document.getElementById("force-phone") || {}).value || "";
+      var fn = (document.getElementById("force-name") || {}).value || "Client";
+      api("/api/admin/wa-clients/" + encodeURIComponent(fp.replace(/\D/g, "")) + "/force-register", { method: "POST", body: { name: fn } })
+        .then(function (d) { toast("Registered " + (d.client && d.client.phone)); return loadWa(); })
+        .catch(function (err) { toast(err.message); });
+    } else if (act === "force-wa") {
+      var fphone = btn.getAttribute("data-phone");
+      api("/api/admin/wa-clients/" + fphone + "/force-register", { method: "POST", body: {} })
+        .then(function () { toast("Marked registered"); return loadWa(); })
+        .catch(function (err) { toast(err.message); });
     }
   });
 
   if (token) {
-    api('/api/admin/me').then(function (d) {
-      document.getElementById('who').textContent = (d.admin && d.admin.email) || '';
+    api("/api/admin/me").then(function (d) {
+      document.getElementById("who").textContent = (d.admin && d.admin.email) || "";
       showApp();
     }).catch(function () {
-      localStorage.removeItem('saip_admin_token');
-      token = '';
+      localStorage.removeItem("saip_admin_token");
+      token = "";
     });
   }
 })();
