@@ -1,55 +1,58 @@
-# SA Invoice Pro – Sync Server v1.0.1
+# SA Invoice Pro – Sync Server v4.0.0
 
-Multi-device workspace sync + public status API for AutoResponder.
+Cloud sync + WhatsApp brain + **admin portal** + public status API.
 
-**v1.0.1** – Switched to pure JSON file storage (no native modules). Works reliably on Render free tier.
+## Admin portal login (default)
+
+Open: `https://YOUR-HOST/admin`
+
+| Field | Default |
+|-------|---------|
+| **Email** | `admin@sainvoice.pro` |
+| **Password** | `Admin@SAIP2026!` |
+
+These are created automatically on first server start if missing.  
+Override with env vars `ADMIN_EMAIL` and `ADMIN_PASSWORD` on Render.
+
+To force a password reset after deploy, set:
+
+```
+ADMIN_FORCE_RESET=1
+ADMIN_PASSWORD=YourNewPassword
+```
+
+…restart once, then remove `ADMIN_FORCE_RESET`.
 
 ## Quick start (local)
 
 ```bash
 cp .env.example .env
-# edit .env → set strong JWT_SECRET and STATUS_API_TOKEN
 npm install
 npm start
 ```
 
-Server runs on `http://localhost:3847` by default.
+Server: `http://localhost:3847` · Admin: `http://localhost:3847/admin`
 
 ## Deploy on Render
 
-1. Create a new **Web Service** → connect this repo
-2. **Runtime:** Node
-3. **Build Command:** `npm install`
-4. **Start Command:** `npm start`
-5. Environment variables (required):
+1. Web Service → this repo  
+2. Build: `npm install` · Start: `npm start`  
+3. Env:
 
 ```
-JWT_SECRET=your-long-random-secret-here
-STATUS_API_TOKEN=your-status-token-for-autoresponder
+JWT_SECRET=long-random-secret
+STATUS_API_TOKEN=your-autoresponder-token
+ADMIN_EMAIL=admin@sainvoice.pro
+ADMIN_PASSWORD=Admin@SAIP2026!
+PUBLIC_BASE_URL=https://your-service.onrender.com
 ```
 
-Node version is pinned to **20.x** via `engines` and `.node-version`.
+## API overview
 
-After deploy, copy the public URL (e.g. `https://saip-sync-xxxx.onrender.com`).
+- Auth: `POST /api/auth/register` · `POST /api/auth/login`
+- Admin UI: `GET /admin`
+- Admin API: `/api/admin/*` (Bearer JWT, role admin)
+- Workspace: `GET/PUT /api/workspace`
+- Status (AutoResponder): `GET /api/status/invoice?number=…&token=…`
 
-## API Overview
-
-### Auth
-- `POST /api/auth/register` `{ "email", "password", "name?" }`
-- `POST /api/auth/login` `{ "email", "password" }` → JWT
-- `GET  /api/auth/me` (Bearer token)
-
-### Workspace (multi-device)
-- `GET  /api/workspace` → pull full data
-- `PUT  /api/workspace` `{ "data": { clients, invoices, tickets, settings } }`
-
-### Status (for AutoResponder)
-Require `?token=YOUR_STATUS_API_TOKEN`
-
-- `GET /api/status/invoice?number=INV-0042&token=...`
-- `GET /api/status/client?phone=27821234567&token=...`
-- `POST /api/status/push` (authenticated) – push one or many invoice statuses
-
-## Frontend integration
-
-See `FRONTEND_INTEGRATION.md`.
+See `DOCUMENTATION.md` and `FRONTEND_INTEGRATION.md`.
