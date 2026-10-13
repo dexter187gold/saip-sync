@@ -1,13 +1,13 @@
 /**
- * AutoResponder brain v3.0
- * Thin HTTP adapter over brain-engine (intents, multi-step, FAQ, memory)
+ * AutoResponder brain v3.1
+ * Phone extraction hardened — SA numbers always map to registered clients
  */
-
 function normalizePhone(p) {
   if (!p) return null;
   let s = String(p).replace(/\D/g, '');
   if (!s) return null;
   if (s.startsWith('0') && s.length === 10) s = '27' + s.slice(1);
+  if (s.length === 9 && /^[6-8]/.test(s)) s = '27' + s;
   if (s.startsWith('27') && s.length > 11) s = s.slice(0, 11);
   if (s.length < 9 || s.length > 15) return null;
   return s;
@@ -16,9 +16,10 @@ function normalizePhone(p) {
 function extractPhoneFromSender(sender) {
   if (!sender) return null;
   const s = String(sender);
-  const matches = s.match(/(\+?\d[\d\s\-]{7,}\d)/g);
+  const cleaned = s.replace(/@.*$/, '').replace(/^whatsapp:/i, '');
+  const matches = cleaned.match(/(\+?\d[\d\s\-]{7,}\d)/g);
   if (matches && matches.length) return normalizePhone(matches[matches.length - 1]);
-  return normalizePhone(s);
+  return normalizePhone(cleaned);
 }
 
 function extractPhoneFromMessage(text) {
@@ -65,7 +66,7 @@ function mountArBrain(app, ctx) {
   const {
     ALLOWED_STATUS_TOKENS,
     DEFAULT_STATUS_TOKEN,
-    brain, // createBrainEngine instance
+    brain,
     PUBLIC_BASE,
     now,
   } = ctx;
@@ -111,6 +112,14 @@ function mountArBrain(app, ctx) {
       if (!brain || typeof brain.handleMessage !== 'function') {
         return res.status(200).json(reply('Brain not loaded. Reply *menu*.'));
       }
+      if (!phone) {
+        return res.status(200).json(reply([
+          '⚠️ Could not read your WhatsApp number.',
+          '',
+          'In AutoResponder, pass the sender as %fromnumber% (or contact id with country code).',
+          'Then reply *menu* again.',
+        ].join('\n')));
+      }
       const text = brain.handleMessage(phone, sender, message);
       return res.status(200).json(reply(text));
     } catch (e) {
@@ -123,7 +132,7 @@ function mountArBrain(app, ctx) {
     res.json({
       ok: true,
       name: 'SAIP AutoResponder Brain',
-      version: '3.0.0',
+      version: '3.1.0',
       engine: 'brain-engine',
       features: [
         'intent_classifier',
@@ -132,6 +141,7 @@ function mountArBrain(app, ctx) {
         'short_term_memory',
         'natural_language_routing',
         'online_forms',
+        'robust_sa_phone_match',
       ],
       forms: {
         register: (PUBLIC_BASE || 'https://saip-sync.onrender.com') + '/forms/register',
