@@ -1,6 +1,6 @@
 /**
  * SA Invoice Pro – Admin Portal (restored)
- * Seeds default admin, mounts intake-api, exposes admin APIs + HTML portal.
+ * Seeds default admin, mounts intake-api + ticket-status, exposes admin APIs + HTML portal.
  */
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -13,6 +13,7 @@ function mountAdmin(app, ctx) {
     waClients, persistWaClients, ticketsIntake, persistTickets,
     invoiceStatus, notifications, persistNotifs,
     auth, now, JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE,
+    DATA_DIR, loadJson, saveJson,
   } = ctx;
 
   try {
@@ -25,12 +26,48 @@ function mountAdmin(app, ctx) {
     console.error('[admin] seed failed', e.message);
   }
 
-  // Critical: mount WA import + ticket intake for the Invoice app
   try {
     const { mountIntakeApi } = require('./intake-api');
     mountIntakeApi(app, { auth, waClients, persistWaClients, ticketsIntake, persistTickets, now });
   } catch (e) {
     console.error('[admin] intake-api mount failed', e.message);
+  }
+
+  try {
+    const { mountTicketStatus } = require('./ticket-status');
+    const DEFAULT_STATUS_TOKEN = 'SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8';
+    const STATUS_TOKEN_RAW = process.env.STATUS_API_TOKEN || DEFAULT_STATUS_TOKEN;
+    const allowed = new Set(
+      String(STATUS_TOKEN_RAW).split(',').map((s) => s.trim()).filter(Boolean)
+    );
+    allowed.add(DEFAULT_STATUS_TOKEN);
+    function statusAuth(req, res, next) {
+      const q = req.query && req.query.token;
+      const h = req.headers['x-status-token'];
+      const authH = req.headers.authorization || '';
+      let t = q || h || '';
+      if (!t && authH.toLowerCase().startsWith('bearer ')) t = authH.slice(7);
+      t = String(t || '').trim();
+      if (!t || !allowed.has(t)) {
+        return res.type('text/plain').status(403).send('⚠️ Invalid status token.\n\nReply *menu* for options.');
+      }
+      next();
+    }
+    mountTicketStatus(app, {
+      auth,
+      statusAuth,
+      DATA_DIR,
+      loadJson,
+      saveJson,
+      ticketsIntake,
+      persistTickets,
+      waClients,
+      persistWaClients,
+      pushNotification: typeof ctx.pushNotification === 'function' ? ctx.pushNotification : null,
+      now,
+    });
+  } catch (e) {
+    console.error('[admin] ticket-status mount failed', e.message);
   }
 
   const adminEmail = String(ADMIN_EMAIL || process.env.ADMIN_EMAIL || DEFAULT_EMAIL || '').toLowerCase().trim();
@@ -169,32 +206,29 @@ button.secondary{background:#2a2448;color:var(--text)}button.danger{background:v
 <button id="btn-login">Enter the Lab</button><p id="login-err" class="muted"></p></div>
 <div id="app" class="hidden">
 <h1>Brain Control Lab</h1><p class="muted" id="who"></p>
-<div class="tabs"><button data-tab="stats" class="active">Stats</button><button data-tab="wa">WA Clients</button><button data-tab="tickets">Tickets</button><button data-tab="users">Users</button><button data-tab="notifs">Notifs</button><button id="btn-logout" class="secondary">Logout</button></div>
+<div class="tabs"><button data-tab="stats" class="active">Stats</button><button data-tab="wa">WA Clients</button><button data-tab="tickets">Tickets</button><button data-tab="users">Users</button><button id="btn-logout" class="secondary">Logout</button></div>
 <div id="panel-stats" class="card"></div>
 <div id="panel-wa" class="card hidden"></div>
 <div id="panel-tickets" class="card hidden"></div>
 <div id="panel-users" class="card hidden"></div>
-<div id="panel-notifs" class="card hidden"></div>
 </div></div><div id="toast"></div>
 <script>
 (function(){
 var token=localStorage.getItem('saip_admin_token')||'';
-var BASE='';
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(function(){t.style.display='none'},3000)}
-function api(path,opts){opts=opts||{};var h={'Content-Type':'application/json'};if(token)h.Authorization='Bearer '+token;return fetch(BASE+path,{method:opts.method||'GET',headers:h,body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||r.statusText);return d})})}
+function api(path,opts){opts=opts||{};var h={'Content-Type':'application/json'};if(token)h.Authorization='Bearer '+token;return fetch(path,{method:opts.method||'GET',headers:h,body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||r.statusText);return d})})}
 function showApp(){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');refreshAll()}
 function login(){var email=document.getElementById('email').value.trim();var password=document.getElementById('password').value;api('/api/auth/login',{method:'POST',body:{email:email,password:password}}).then(function(d){token=d.token;localStorage.setItem('saip_admin_token',token);document.getElementById('who').textContent=d.user.email;showApp()}).catch(function(e){document.getElementById('login-err').textContent=e.message})}
 document.getElementById('btn-login').onclick=login;
 document.getElementById('password').addEventListener('keydown',function(e){if(e.key==='Enter')login()});
 document.getElementById('btn-logout').onclick=function(){token='';localStorage.removeItem('saip_admin_token');location.reload()};
-document.querySelectorAll('[data-tab]').forEach(function(b){b.onclick=function(){document.querySelectorAll('[data-tab]').forEach(function(x){x.classList.remove('active')});b.classList.add('active');['stats','wa','tickets','users','notifs'].forEach(function(n){document.getElementById('panel-'+n).classList.toggle('hidden',n!==b.getAttribute('data-tab'))});if(b.getAttribute('data-tab')==='wa')loadWa();if(b.getAttribute('data-tab')==='tickets')loadTickets();if(b.getAttribute('data-tab')==='users')loadUsers();if(b.getAttribute('data-tab')==='notifs')loadNotifs()}});
+document.querySelectorAll('[data-tab]').forEach(function(b){b.onclick=function(){document.querySelectorAll('[data-tab]').forEach(function(x){x.classList.remove('active')});b.classList.add('active');['stats','wa','tickets','users'].forEach(function(n){document.getElementById('panel-'+n).classList.toggle('hidden',n!==b.getAttribute('data-tab'))});if(b.getAttribute('data-tab')==='wa')loadWa();if(b.getAttribute('data-tab')==='tickets')loadTickets();if(b.getAttribute('data-tab')==='users')loadUsers()}});
 function refreshAll(){api('/api/admin/stats').then(function(d){var s=d.stats;document.getElementById('panel-stats').innerHTML='<h3>Stats</h3><p>Users: '+s.users+' · WA: '+s.wa_clients+' · Tickets: '+s.tickets_total+' (open '+s.tickets_open+') · AR: R'+Number(s.outstanding_ar||0).toFixed(2)+'</p>'}).catch(function(e){toast(e.message)})}
 function loadWa(){api('/api/admin/wa-clients').then(function(d){var rows=(d.clients||[]).map(function(c){return '<tr><td>'+esc(c.name)+'</td><td>'+esc(c.phone)+'</td><td>'+(c.pending_import?'pending':'ok')+'</td><td><button class="danger" data-act="delwa" data-phone="'+esc(c.phone)+'">Remove</button></td></tr>'}).join('');document.getElementById('panel-wa').innerHTML='<h3>WA Clients</h3><table><tr><th>Name</th><th>Phone</th><th>Status</th><th></th></tr>'+(rows||'<tr><td colspan=4>None</td></tr>')+'</table>'}).catch(function(e){toast(e.message)})}
 function loadTickets(){api('/api/admin/tickets').then(function(d){var rows=(d.tickets||[]).map(function(t){return '<tr><td>'+esc(t.device||t.id)+'</td><td>'+esc(t.issue||'')+'</td><td>'+esc(t.status)+'</td><td><button data-act="ticket" data-id="'+esc(t.id)+'" data-status="done">Done</button></td></tr>'}).join('');document.getElementById('panel-tickets').innerHTML='<h3>Tickets</h3><table><tr><th>Device</th><th>Issue</th><th>Status</th><th></th></tr>'+(rows||'<tr><td colspan=4>None</td></tr>')+'</table>'}).catch(function(e){toast(e.message)})}
 function loadUsers(){api('/api/admin/users').then(function(d){var rows=(d.users||[]).map(function(u){return '<tr><td>'+esc(u.email)+'</td><td>'+esc(u.role)+'</td><td>'+esc(u.created_at||'').slice(0,10)+'</td></tr>'}).join('');document.getElementById('panel-users').innerHTML='<h3>Users</h3><table><tr><th>Email</th><th>Role</th><th>Created</th></tr>'+(rows||'')+'</table>'}).catch(function(e){toast(e.message)})}
-function loadNotifs(){api('/api/admin/notifications').then(function(d){var rows=(d.notifications||[]).map(function(n){return '<div><strong>'+esc(n.title)+'</strong><div class="muted">'+esc(n.body)+'</div></div>'}).join('');document.getElementById('panel-notifs').innerHTML='<h3>Notifications</h3><button data-act="clear-notifs">Clear</button>'+(rows||'<p class="muted">None</p>')}).catch(function(e){toast(e.message)})}
-function esc(s){return String(s==null?'' :s).replace(/&/g,'&').replace(/</g,'<').replace(/"/g,'"')}
-document.body.addEventListener('click',function(e){var btn=e.target.closest('[data-act]');if(!btn)return;var act=btn.getAttribute('data-act');if(act==='delwa'){if(!confirm('Remove?'))return;api('/api/admin/wa-clients/'+btn.getAttribute('data-phone'),{method:'DELETE'}).then(function(){toast('Removed');loadWa()}).catch(function(err){toast(err.message)})}else if(act==='ticket'){api('/api/admin/tickets/'+btn.getAttribute('data-id'),{method:'PATCH',body:{status:btn.getAttribute('data-status')}}).then(function(){toast('Updated');loadTickets()}).catch(function(err){toast(err.message)})}else if(act==='clear-notifs'){api('/api/admin/notifications/clear',{method:'POST',body:{}}).then(function(){toast('Cleared');loadNotifs()}).catch(function(err){toast(err.message)})}});
+function esc(s){return String(s==null?'':s).replace(/&/g,'&').replace(/</g,'<').replace(/"/g,'"')}
+document.body.addEventListener('click',function(e){var btn=e.target.closest('[data-act]');if(!btn)return;var act=btn.getAttribute('data-act');if(act==='delwa'){if(!confirm('Remove?'))return;api('/api/admin/wa-clients/'+btn.getAttribute('data-phone'),{method:'DELETE'}).then(function(){toast('Removed');loadWa()}).catch(function(err){toast(err.message)})}else if(act==='ticket'){api('/api/admin/tickets/'+btn.getAttribute('data-id'),{method:'PATCH',body:{status:btn.getAttribute('data-status')}}).then(function(){toast('Updated');loadTickets()}).catch(function(err){toast(err.message)})}});
 if(token){api('/api/admin/me').then(function(d){document.getElementById('who').textContent=d.admin.email;showApp()}).catch(function(){localStorage.removeItem('saip_admin_token');token=''})}
 })();
 </script></body></html>`;
