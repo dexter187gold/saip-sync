@@ -1,8 +1,6 @@
 /**
- * SA Invoice Pro – Admin Portal v4.0.0
- * "Brain's Acme Labs Control Center"
- * Theme: Pinky and the Brain · Try to take over the (SME) world
- * Narf! This is not a plan to take over the world... or is it?
+ * SA Invoice Pro – Admin Portal v4.0.1
+ * Brain's Acme Labs Control Center — login fixed (script parse error)
  */
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -238,12 +236,17 @@ function mountAdmin(app, ctx) {
   });
 
   app.get('/admin', (req, res) => {
-    res.type('html').send(`<!DOCTYPE html>
+    res.type('html').send(ADMIN_HTML);
+  });
+}
+
+/** Client portal HTML — data-* + event delegation (no fragile quote escaping). */
+const ADMIN_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Brain's Control Lab · SA Invoice Pro</title>
+<title>Brain Control Lab · SA Invoice Pro</title>
 <style>
 :root{
   --bg:#0c0a14; --card:#16122a; --line:#2a2448; --text:#f0e6ff; --muted:#a89bc8;
@@ -283,43 +286,39 @@ th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;
 .login-box{max-width:420px;margin:70px auto}
 .narf{font-size:.75rem;color:var(--pinky);opacity:.8;margin-top:8px}
 .hero-quote{font-style:italic;color:var(--muted);font-size:.85rem;border-left:3px solid var(--accent);padding-left:12px;margin:12px 0 0}
+.busy{opacity:.6;pointer-events:none}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div id="loginView" class="login-box card">
-    <h1>🧠 Brain's Control Lab</h1>
-    <p class="sub">Acme Labs · SA Invoice Pro · World Domination Edition</p>
-    <p class="hero-quote">"Pinky, are you pondering what I'm pondering?"<br/>"I think so, Brain, but how will we take over the invoicing world with only one admin login?"</p>
+    <h1>Brain Control Lab</h1>
+    <p class="sub">Acme Labs · SA Invoice Pro · Admin</p>
+    <p class="hero-quote">"Pinky, are you pondering what I am pondering?"</p>
     <label>Email</label>
     <input id="email" type="email" placeholder="admin@sainvoice.pro" value="admin@sainvoice.pro" autocomplete="username"/>
     <label>Password</label>
-    <input id="password" type="password" placeholder="••••••••" autocomplete="current-password"/>
-    <button class="btn" style="width:100%" onclick="login()">Enter the Lab</button>
-    <p class="narf">Default: <b>admin@sainvoice.pro</b> / <b>Admin@SAIP2026!</b> · Override via ADMIN_EMAIL &amp; ADMIN_PASSWORD on the server.</p>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password"/>
+    <button type="button" id="loginBtn" class="btn" style="width:100%">Enter the Lab</button>
+    <p class="narf">Default: <b>admin@sainvoice.pro</b> / <b>Admin@SAIP2026!</b></p>
+    <p id="loginErr" class="narf" style="color:var(--danger);display:none"></p>
   </div>
 
   <div id="appView" class="hidden">
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <div>
-        <h1>🧠 Brain's Control Lab</h1>
+        <h1>Brain Control Lab</h1>
         <p class="sub" id="who">—</p>
       </div>
-      <button class="btn-ghost" onclick="logout()">Log out · Poit!</button>
+      <button type="button" class="btn-ghost" id="logoutBtn">Log out</button>
     </div>
-
-    <div class="card">
-      <div class="grid" id="stats"></div>
-      <p class="narf" style="margin-top:10px">The same thing we do every night, Pinky — try to take over the world of SME invoicing.</p>
-    </div>
-
+    <div class="card"><div class="grid" id="stats"></div></div>
     <div class="row" style="margin-bottom:14px">
-      <button class="tab on" data-tab="users" onclick="tab('users')">👥 Users</button>
-      <button class="tab" data-tab="wa" onclick="tab('wa')">📱 WA Clients</button>
-      <button class="tab" data-tab="tickets" onclick="tab('tickets')">🛠 Tickets</button>
-      <button class="tab" data-tab="notifs" onclick="tab('notifs')">🔔 Notifications</button>
+      <button type="button" class="tab on" data-tab="users">Users</button>
+      <button type="button" class="tab" data-tab="wa">WA Clients</button>
+      <button type="button" class="tab" data-tab="tickets">Tickets</button>
+      <button type="button" class="tab" data-tab="notifs">Notifications</button>
     </div>
-
     <div id="panel-users" class="card"></div>
     <div id="panel-wa" class="card hidden"></div>
     <div id="panel-tickets" class="card hidden"></div>
@@ -328,175 +327,272 @@ th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;
 </div>
 <div id="toast"></div>
 <script>
-const API = location.origin;
-let token = localStorage.getItem('saip_admin_token') || '';
+(function () {
+  var API = location.origin;
+  var token = localStorage.getItem("saip_admin_token") || "";
 
-function toast(msg){
-  const el=document.getElementById('toast');
-  el.textContent=msg; el.style.display='block';
-  setTimeout(()=>el.style.display='none',3400);
-}
-async function api(path, opts={}){
-  const r = await fetch(API+path,{
-    ...opts,
-    headers:{
-      'Content-Type':'application/json',
-      ...(token?{Authorization:'Bearer '+token}:{}),
-      ...(opts.headers||{})
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined
-  });
-  const data = await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(data.error || r.statusText);
-  return data;
-}
-async function login(){
-  try{
-    const email=document.getElementById('email').value.trim();
-    const password=document.getElementById('password').value;
-    if(!email||!password){ toast('Email and password required'); return; }
-    const data=await api('/api/auth/login',{method:'POST',body:{email,password}});
-    token=data.token; localStorage.setItem('saip_admin_token',token);
-    try {
-      await api('/api/admin/me');
-    } catch (err) {
-      token=''; localStorage.removeItem('saip_admin_token');
-      throw new Error('Logged in, but this account is not an admin. Use admin@sainvoice.pro or set ADMIN_EMAIL on the server.');
-    }
-    showApp();
-  }catch(e){ toast(e.message||'Login failed · Zort!'); }
-}
-document.getElementById('password').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
-document.getElementById('email').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
-function logout(){
-  token=''; localStorage.removeItem('saip_admin_token');
-  document.getElementById('appView').classList.add('hidden');
-  document.getElementById('loginView').classList.remove('hidden');
-}
-function tab(name){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.tab===name));
-  ['users','wa','tickets','notifs'].forEach(n=>{
-    document.getElementById('panel-'+n).classList.toggle('hidden', n!==name);
-  });
-}
-async function showApp(){
-  document.getElementById('loginView').classList.add('hidden');
-  document.getElementById('appView').classList.remove('hidden');
-  try{
-    const me=await api('/api/admin/me');
-    document.getElementById('who').textContent=me.admin.email+(me.admin.name?' · '+me.admin.name:'')+' · Lab Director';
-    await refreshAll();
-  }catch(e){
-    toast('Admin access required · Narf!');
-    logout();
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.style.display = "block";
+    setTimeout(function () { el.style.display = "none"; }, 4000);
   }
-}
-async function refreshAll(){
-  await Promise.all([loadStats(), loadUsers(), loadWa(), loadTickets(), loadNotifs()]);
-}
-async function loadStats(){
-  const d=await api('/api/admin/stats');
-  const s=d.stats;
-  document.getElementById('stats').innerHTML=[
-    ['Users',s.users],['WA clients',s.wa_clients],['Tickets',s.tickets_total],
-    ['Open jobs',s.tickets_open],['Invoice rows',s.invoice_status_rows],
-    ['AR', 'R'+(s.outstanding_ar||0).toFixed(2)]
-  ].map(([k,v])=>'<div class="stat"><b>'+v+'</b><span>'+k+'</span></div>').join('');
-}
-async function loadUsers(){
-  const d=await api('/api/admin/users');
-  const rows=d.users.map(u=>'<tr>'
-    +'<td><div>'+(u.name||'—')+'</div><div style="color:var(--muted);font-size:.75rem">'+u.email+'</div></td>'
-    +'<td><span class="badge '+(u.role==='admin'?'admin':'user')+'">'+u.role+'</span></td>'
-    +'<td>v'+(u.workspace_version||0)+'</td>'
-    +'<td style="font-size:.75rem;color:var(--muted)">'+(u.created_at||'').slice(0,10)+'</td>'
-    +'<td class="row">'
-    +'<button class="btn-ok" onclick="resetPw(\''+u.id+'\')">Reset PW</button>'
-    +'<button class="btn-danger" onclick="delUser(\''+u.id+'\',\''+u.email+'\')">Delete</button>'
-    +'</td></tr>').join('');
-  document.getElementById('panel-users').innerHTML='<h3 style="margin:0 0 12px">Cloud users · Lab subjects</h3>'
-    +'<div class="row" style="margin-bottom:10px"><button class="btn-ghost" onclick="loadUsers()">Refresh</button></div>'
-    +'<table><thead><tr><th>User</th><th>Role</th><th>WS</th><th>Joined</th><th>Actions</th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="5">No users yet · The lab is empty</td></tr>')+'</tbody></table>';
-}
-async function resetPw(id){
-  if(!confirm('Generate a temporary password for this user?')) return;
-  try{
-    const d=await api('/api/admin/users/'+id+'/reset-password',{method:'POST',body:{}});
-    prompt('Temporary password (copy now):', d.temporary_password);
-    toast('Password reset for '+d.email+' · Success!');
-  }catch(e){ toast(e.message); }
-}
-async function delUser(id,email){
-  if(!confirm('Delete account '+email+' and their workspace? This cannot be undone.')) return;
-  try{
-    await api('/api/admin/users/'+id,{method:'DELETE'});
-    toast('Deleted '+email+' · Poit!');
-    await refreshAll();
-  }catch(e){ toast(e.message); }
-}
-async function loadWa(){
-  const d=await api('/api/admin/wa-clients');
-  const rows=d.clients.map(c=>'<tr>'
-    +'<td><div>'+(c.name||'—')+'</div><div style="color:var(--muted);font-size:.75rem">'+c.phone+'</div></td>'
-    +'<td>'+(c.email||'—')+'</td>'
-    +'<td>'+(c.registered?'✅':'⚠️')+'</td>'
-    +'<td>'+(c.source||'')+'</td>'
-    +'<td><button class="btn-danger" onclick="delWa(\''+c.phone+'\')">Remove</button></td></tr>').join('');
-  document.getElementById('panel-wa').innerHTML='<h3 style="margin:0 0 12px">WhatsApp clients · Future minions</h3>'
-    +'<table><thead><tr><th>Client</th><th>Email</th><th>Reg</th><th>Source</th><th></th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="5">None yet</td></tr>')+'</tbody></table>';
-}
-async function delWa(phone){
-  if(!confirm('Remove WA profile '+phone+'?')) return;
-  try{
-    await api('/api/admin/wa-clients/'+phone,{method:'DELETE'});
-    toast('Removed · Zort!');
-    await loadWa();
-  }catch(e){ toast(e.message); }
-}
-async function loadTickets(){
-  const d=await api('/api/admin/tickets');
-  const rows=d.tickets.map(t=>'<tr>'
-    +'<td>'+(t.customer_name||'—')+'<div style="color:var(--muted);font-size:.75rem">'+(t.customer_phone||'')+'</div></td>'
-    +'<td>'+(t.device||'—')+'</td>'
-    +'<td>'+(t.issue||'—')+'</td>'
-    +'<td>'+(t.urgency||'')+' / '+(t.status||'new')+'</td>'
-    +'<td class="row">'
-    +'<button class="btn" onclick="setTicket(\''+t.id+'\',\'in_progress\')">In progress</button>'
-    +'<button class="btn-ok" onclick="setTicket(\''+t.id+'\',\'done\')">Done</button>'
-    +'</td></tr>').join('');
-  document.getElementById('panel-tickets').innerHTML='<h3 style="margin:0 0 12px">Job intake (WhatsApp) · Lab experiments</h3>'
-    +'<table><thead><tr><th>Customer</th><th>Device</th><th>Issue</th><th>Status</th><th></th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="5">No tickets · Quiet night in the lab</td></tr>')+'</tbody></table>';
-}
-async function setTicket(id,status){
-  try{
-    await api('/api/admin/tickets/'+id,{method:'PATCH',body:{status}});
-    toast('Ticket → '+status);
-    await loadTickets();
-  }catch(e){ toast(e.message); }
-}
-async function loadNotifs(){
-  const d=await api('/api/admin/notifications');
-  const rows=d.notifications.map(n=>'<tr>'
-    +'<td>'+(n.type||'')+'</td>'
-    +'<td><b>'+(n.title||'')+'</b><div style="color:var(--muted)">'+(n.body||'')+'</div></td>'
-    +'<td style="font-size:.75rem">'+(n.created_at||'').replace('T',' ').slice(0,19)+'</td></tr>').join('');
-  document.getElementById('panel-notifs').innerHTML='<h3 style="margin:0 0 12px">Notifications · Brain\'s alerts</h3>'
-    +'<div class="row" style="margin-bottom:10px"><button class="btn-ghost" onclick="clearNotifs()">Clear all</button></div>'
-    +'<table><thead><tr><th>Type</th><th>Message</th><th>When</th></tr></thead><tbody>'
-    +(rows||'<tr><td colspan="3">None</td></tr>')+'</tbody></table>';
-}
-async function clearNotifs(){
-  try{ await api('/api/admin/notifications/clear',{method:'POST',body:{}}); toast('Cleared · Narf!'); await loadNotifs(); }
-  catch(e){ toast(e.message); }
-}
-if(token){ showApp(); }
+
+  function showLoginError(msg) {
+    var el = document.getElementById("loginErr");
+    el.style.display = "block";
+    el.textContent = msg || "";
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    return fetch(API + path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) throw new Error(data.error || r.statusText || "Request failed");
+        return data;
+      });
+    });
+  }
+
+  function login() {
+    var email = document.getElementById("email").value.trim();
+    var password = document.getElementById("password").value;
+    var btn = document.getElementById("loginBtn");
+    showLoginError("");
+    if (!email || !password) {
+      showLoginError("Email and password required");
+      toast("Email and password required");
+      return;
+    }
+    btn.classList.add("busy");
+    btn.textContent = "Signing in…";
+    api("/api/auth/login", { method: "POST", body: { email: email, password: password } })
+      .then(function (data) {
+        token = data.token;
+        localStorage.setItem("saip_admin_token", token);
+        return api("/api/admin/me");
+      })
+      .then(function () {
+        showApp();
+      })
+      .catch(function (e) {
+        token = "";
+        localStorage.removeItem("saip_admin_token");
+        var msg = e.message || "Login failed";
+        if (/Admin access/i.test(msg)) {
+          msg = "Account is not an admin. Use admin@sainvoice.pro";
+        }
+        showLoginError(msg);
+        toast(msg);
+      })
+      .finally(function () {
+        btn.classList.remove("busy");
+        btn.textContent = "Enter the Lab";
+      });
+  }
+
+  function logout() {
+    token = "";
+    localStorage.removeItem("saip_admin_token");
+    document.getElementById("appView").classList.add("hidden");
+    document.getElementById("loginView").classList.remove("hidden");
+  }
+
+  function tab(name) {
+    document.querySelectorAll(".tab").forEach(function (t) {
+      t.classList.toggle("on", t.getAttribute("data-tab") === name);
+    });
+    ["users", "wa", "tickets", "notifs"].forEach(function (n) {
+      document.getElementById("panel-" + n).classList.toggle("hidden", n !== name);
+    });
+  }
+
+  function showApp() {
+    document.getElementById("loginView").classList.add("hidden");
+    document.getElementById("appView").classList.remove("hidden");
+    api("/api/admin/me")
+      .then(function (me) {
+        var label = me.admin.email + (me.admin.name ? " · " + me.admin.name : "") + " · Lab Director";
+        document.getElementById("who").textContent = label;
+        return refreshAll();
+      })
+      .catch(function () {
+        toast("Admin access required");
+        logout();
+      });
+  }
+
+  function refreshAll() {
+    return Promise.all([loadStats(), loadUsers(), loadWa(), loadTickets(), loadNotifs()]);
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function loadStats() {
+    return api("/api/admin/stats").then(function (d) {
+      var s = d.stats;
+      var items = [
+        ["Users", s.users],
+        ["WA clients", s.wa_clients],
+        ["Tickets", s.tickets_total],
+        ["Open jobs", s.tickets_open],
+        ["Invoice rows", s.invoice_status_rows],
+        ["AR", "R" + (s.outstanding_ar || 0).toFixed(2)]
+      ];
+      document.getElementById("stats").innerHTML = items.map(function (pair) {
+        return '<div class="stat"><b>' + esc(pair[1]) + '</b><span>' + esc(pair[0]) + '</span></div>';
+      }).join("");
+    });
+  }
+
+  function loadUsers() {
+    return api("/api/admin/users").then(function (d) {
+      var rows = (d.users || []).map(function (u) {
+        return "<tr>"
+          + "<td><div>" + esc(u.name || "—") + '</div><div style="color:var(--muted);font-size:.75rem">' + esc(u.email) + "</div></td>"
+          + '<td><span class="badge ' + (u.role === "admin" ? "admin" : "user") + '">' + esc(u.role) + "</span></td>"
+          + "<td>v" + esc(u.workspace_version || 0) + "</td>"
+          + '<td style="font-size:.75rem;color:var(--muted)">' + esc(String(u.created_at || "").slice(0, 10)) + "</td>"
+          + '<td class="row">'
+          + '<button type="button" class="btn-ok" data-act="reset" data-id="' + esc(u.id) + '">Reset PW</button>'
+          + '<button type="button" class="btn-danger" data-act="deluser" data-id="' + esc(u.id) + '" data-email="' + esc(u.email) + '">Delete</button>'
+          + "</td></tr>";
+      }).join("");
+      document.getElementById("panel-users").innerHTML =
+        '<h3 style="margin:0 0 12px">Cloud users</h3>'
+        + '<div class="row" style="margin-bottom:10px"><button type="button" class="btn-ghost" data-act="refresh-users">Refresh</button></div>'
+        + "<table><thead><tr><th>User</th><th>Role</th><th>WS</th><th>Joined</th><th>Actions</th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="5">No users yet</td></tr>')
+        + "</tbody></table>";
+    });
+  }
+
+  function loadWa() {
+    return api("/api/admin/wa-clients").then(function (d) {
+      var rows = (d.clients || []).map(function (c) {
+        return "<tr>"
+          + "<td><div>" + esc(c.name || "—") + '</div><div style="color:var(--muted);font-size:.75rem">' + esc(c.phone) + "</div></td>"
+          + "<td>" + esc(c.email || "—") + "</td>"
+          + "<td>" + (c.registered ? "yes" : "no") + "</td>"
+          + "<td>" + esc(c.source || "") + "</td>"
+          + '<td><button type="button" class="btn-danger" data-act="delwa" data-phone="' + esc(c.phone) + '">Remove</button></td></tr>';
+      }).join("");
+      document.getElementById("panel-wa").innerHTML =
+        '<h3 style="margin:0 0 12px">WhatsApp clients</h3>'
+        + "<table><thead><tr><th>Client</th><th>Email</th><th>Reg</th><th>Source</th><th></th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="5">None yet</td></tr>')
+        + "</tbody></table>";
+    });
+  }
+
+  function loadTickets() {
+    return api("/api/admin/tickets").then(function (d) {
+      var rows = (d.tickets || []).map(function (t) {
+        return "<tr>"
+          + "<td>" + esc(t.customer_name || "—") + '<div style="color:var(--muted);font-size:.75rem">' + esc(t.customer_phone || "") + "</div></td>"
+          + "<td>" + esc(t.device || "—") + "</td>"
+          + "<td>" + esc(t.issue || "—") + "</td>"
+          + "<td>" + esc((t.urgency || "") + " / " + (t.status || "new")) + "</td>"
+          + '<td class="row">'
+          + '<button type="button" class="btn" data-act="ticket" data-id="' + esc(t.id) + '" data-status="in_progress">In progress</button>'
+          + '<button type="button" class="btn-ok" data-act="ticket" data-id="' + esc(t.id) + '" data-status="done">Done</button>'
+          + "</td></tr>";
+      }).join("");
+      document.getElementById("panel-tickets").innerHTML =
+        '<h3 style="margin:0 0 12px">Job intake</h3>'
+        + "<table><thead><tr><th>Customer</th><th>Device</th><th>Issue</th><th>Status</th><th></th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="5">No tickets</td></tr>')
+        + "</tbody></table>";
+    });
+  }
+
+  function loadNotifs() {
+    return api("/api/admin/notifications").then(function (d) {
+      var rows = (d.notifications || []).map(function (n) {
+        return "<tr>"
+          + "<td>" + esc(n.type || "") + "</td>"
+          + "<td><b>" + esc(n.title || "") + '</b><div style="color:var(--muted)">' + esc(n.body || "") + "</div></td>"
+          + '<td style="font-size:.75rem">' + esc(String(n.created_at || "").replace("T", " ").slice(0, 19)) + "</td></tr>";
+      }).join("");
+      document.getElementById("panel-notifs").innerHTML =
+        '<h3 style="margin:0 0 12px">Notifications</h3>'
+        + '<div class="row" style="margin-bottom:10px"><button type="button" class="btn-ghost" data-act="clear-notifs">Clear all</button></div>'
+        + "<table><thead><tr><th>Type</th><th>Message</th><th>When</th></tr></thead><tbody>"
+        + (rows || '<tr><td colspan="3">None</td></tr>')
+        + "</tbody></table>";
+    });
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", login);
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+  document.getElementById("password").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") login();
+  });
+  document.getElementById("email").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") login();
+  });
+  document.querySelectorAll(".tab").forEach(function (t) {
+    t.addEventListener("click", function () {
+      tab(t.getAttribute("data-tab"));
+    });
+  });
+
+  document.body.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "refresh-users") {
+      loadUsers().catch(function (err) { toast(err.message); });
+    } else if (act === "reset") {
+      if (!confirm("Generate a temporary password for this user?")) return;
+      api("/api/admin/users/" + btn.getAttribute("data-id") + "/reset-password", { method: "POST", body: {} })
+        .then(function (d) {
+          prompt("Temporary password (copy now):", d.temporary_password);
+          toast("Password reset for " + d.email);
+        })
+        .catch(function (err) { toast(err.message); });
+    } else if (act === "deluser") {
+      var email = btn.getAttribute("data-email");
+      if (!confirm("Delete account " + email + " and their workspace?")) return;
+      api("/api/admin/users/" + btn.getAttribute("data-id"), { method: "DELETE" })
+        .then(function () { toast("Deleted " + email); return refreshAll(); })
+        .catch(function (err) { toast(err.message); });
+    } else if (act === "delwa") {
+      var phone = btn.getAttribute("data-phone");
+      if (!confirm("Remove WA profile " + phone + "?")) return;
+      api("/api/admin/wa-clients/" + phone, { method: "DELETE" })
+        .then(function () { toast("Removed"); return loadWa(); })
+        .catch(function (err) { toast(err.message); });
+    } else if (act === "ticket") {
+      api("/api/admin/tickets/" + btn.getAttribute("data-id"), {
+        method: "PATCH",
+        body: { status: btn.getAttribute("data-status") }
+      })
+        .then(function () { toast("Ticket updated"); return loadTickets(); })
+        .catch(function (err) { toast(err.message); });
+    } else if (act === "clear-notifs") {
+      api("/api/admin/notifications/clear", { method: "POST", body: {} })
+        .then(function () { toast("Cleared"); return loadNotifs(); })
+        .catch(function (err) { toast(err.message); });
+    }
+  });
+
+  if (token) showApp();
+})();
 </script>
 </body>
-</html>`);
-  });
-}
+</html>`;
 
 module.exports = { mountAdmin };
