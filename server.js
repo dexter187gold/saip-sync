@@ -1,8 +1,7 @@
 /**
- * SA Invoice Pro – Sync Server v4.0.0
+ * SA Invoice Pro – Sync Server v4.1.0
  * World Domination Mega Pack · Pinky & the Brain Edition
- * "The same thing we do every night, Pinky — try to take over the world!"
- * Admin portal · brain-engine · forms · Q1–Q10 · polished UI
+ * Real-time wa_clients store · full brain-engine · registration that sticks
  */
 require('dotenv').config();
 const express = require('express');
@@ -62,10 +61,21 @@ function loadJson(file, fallback = {}) {
   }
   return fallback;
 }
+
 function saveJson(file, obj) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
+  try {
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    console.error('saveJson', file, e.message);
+    // Fallback: direct write if rename fails (some cloud FS)
+    try {
+      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (e2) {
+      console.error('saveJson direct', file, e2.message);
+    }
+  }
 }
 
 let users = loadJson(USERS_FILE, {});
@@ -82,9 +92,26 @@ function persistWorkspaces() { saveJson(WORKSPACES_FILE, workspaces); }
 function persistStatus() { saveJson(STATUS_FILE, invoiceStatus); }
 function persistResets() { saveJson(RESET_FILE, passwordResets); }
 function persistTickets() { saveJson(TICKETS_FILE, ticketsIntake); }
-function persistWaClients() { saveJson(WA_CLIENTS_FILE, waClients); }
+function persistWaClients() {
+  // Always write the live in-memory object so registration is real-time
+  saveJson(WA_CLIENTS_FILE, waClients);
+}
 function persistNotifs() { saveJson(NOTIFS_FILE, notifications); }
 function persistSessions() { saveJson(SESSIONS_FILE, sessions); }
+
+/** Merge disk into memory if disk has newer keys (survives partial restarts) */
+function reloadWaClientsFromDisk() {
+  try {
+    const disk = loadJson(WA_CLIENTS_FILE, {});
+    for (const [k, v] of Object.entries(disk)) {
+      if (!waClients[k] || (v.updated_at && (!waClients[k].updated_at || v.updated_at > waClients[k].updated_at))) {
+        waClients[k] = v;
+      }
+    }
+  } catch (e) {
+    console.error('reloadWaClientsFromDisk', e.message);
+  }
+}
 
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
@@ -124,8 +151,11 @@ function statusAuth(req, res, next) {
 function normalizePhone(p) {
   if (!p) return null;
   let s = String(p).replace(/\D/g, '');
+  if (!s) return null;
   if (s.startsWith('0') && s.length === 10) s = '27' + s.slice(1);
-  if (s.length < 9) return null;
+  if (s.length === 9 && /^[6-8]/.test(s)) s = '27' + s;
+  if (s.startsWith('27') && s.length > 11) s = s.slice(0, 11);
+  if (s.length < 9 || s.length > 15) return null;
   return s;
 }
 
@@ -266,12 +296,35 @@ function indexWorkspaceClients(userId, data) {
     const phone = normalizePhone(c.phone);
     if (!phone) continue;
     const existing = waClients[phone];
-    if (existing && existing.source === 'whatsapp_register' && !existing.linked_client_id) {
-      waClients[phone] = { ...existing, name: existing.name || c.name, email: existing.email || c.email, linked_client_id: c.id, owner_user_id: userId, updated_at: now() };
+    if (existing && (existing.source === 'whatsapp_register' || existing.source === 'whatsapp_step_form' || existing.source === 'whatsapp_brain') && !existing.linked_client_id) {
+      waClients[phone] = {
+        ...existing,
+        name: existing.name || c.name,
+        email: existing.email || c.email,
+        linked_client_id: c.id,
+        owner_user_id: userId,
+        registered: true,
+        pending_import: false,
+        updated_at: now(),
+      };
     } else if (!existing) {
-      waClients[phone] = { id: uuidv4(), phone, name: c.name || null, email: c.email || null, company: c.company || null, address: c.address || null, source: 'app_sync', linked_client_id: c.id, owner_user_id: userId, registered: true, created_at: now(), updated_at: now() };
+      waClients[phone] = {
+        id: uuidv4(), phone, name: c.name || null, email: c.email || null,
+        company: c.company || null, address: c.address || null,
+        source: 'app_sync', linked_client_id: c.id, owner_user_id: userId,
+        registered: true, pending_import: false, created_at: now(), updated_at: now(),
+      };
     } else {
-      waClients[phone] = { ...existing, name: c.name || existing.name, email: c.email || existing.email, linked_client_id: c.id || existing.linked_client_id, owner_user_id: userId, registered: true, updated_at: now() };
+      waClients[phone] = {
+        ...existing,
+        name: c.name || existing.name,
+        email: c.email || existing.email,
+        linked_client_id: c.id || existing.linked_client_id,
+        owner_user_id: userId,
+        registered: true,
+        pending_import: false,
+        updated_at: now(),
+      };
     }
   }
   persistWaClients();
@@ -285,7 +338,13 @@ app.post('/api/status/push', auth, (req, res) => {
     if (!inv || !inv.invoice_number) continue;
     const number = normalizeInvoiceQuery(inv.invoice_number);
     const key = `${req.user.id}::${number}`;
-    invoiceStatus[key] = { id: inv.id || uuidv4(), user_id: req.user.id, invoice_number: number, client_name: inv.client_name || null, client_phone: normalizePhone(inv.client_phone), total: inv.total ?? null, balance_due: inv.balance_due ?? null, status: inv.status || 'unpaid', due_date: inv.due_date || null, last_payment_at: inv.last_payment_at || null, updated_at: ts };
+    invoiceStatus[key] = {
+      id: inv.id || uuidv4(), user_id: req.user.id, invoice_number: number,
+      client_name: inv.client_name || null, client_phone: normalizePhone(inv.client_phone),
+      total: inv.total ?? null, balance_due: inv.balance_due ?? null,
+      status: inv.status || 'unpaid', due_date: inv.due_date || null,
+      last_payment_at: inv.last_payment_at || null, updated_at: ts,
+    };
     count++;
   }
   persistStatus();
@@ -307,7 +366,13 @@ function syncInvoiceStatus(userId, workspace) {
     if (balance <= 0) status = 'paid';
     else if (paid > 0) status = 'partial';
     else if (inv.dueDate && new Date(inv.dueDate) < new Date()) status = 'overdue';
-    invoiceStatus[`${userId}::${number}`] = { id: inv.id || uuidv4(), user_id: userId, invoice_number: number, client_name: client.name || inv.clientName || null, client_phone: normalizePhone(client.phone || inv.clientPhone), total, balance_due: balance, status, due_date: inv.dueDate || null, last_payment_at: inv.lastPaymentAt || null, updated_at: ts };
+    invoiceStatus[`${userId}::${number}`] = {
+      id: inv.id || uuidv4(), user_id: userId, invoice_number: number,
+      client_name: client.name || inv.clientName || null,
+      client_phone: normalizePhone(client.phone || inv.clientPhone),
+      total, balance_due: balance, status,
+      due_date: inv.dueDate || null, last_payment_at: inv.lastPaymentAt || null, updated_at: ts,
+    };
   }
   persistStatus();
 }
@@ -341,16 +406,37 @@ app.post('/api/notifications/read', auth, (req, res) => {
 });
 
 app.get('/api/wa/pending', auth, (req, res) => {
-  const list = Object.values(waClients).filter(c => c.pending_import || (c.source === 'whatsapp_register' && !c.linked_client_id));
+  reloadWaClientsFromDisk();
+  const list = Object.values(waClients).filter(c => c.pending_import || ((c.source === 'whatsapp_register' || c.source === 'whatsapp_step_form' || c.source === 'whatsapp_brain') && !c.linked_client_id));
   res.json({ ok: true, count: list.length, clients: list });
+});
+
+/** Debug: check if a phone is registered (status token) */
+app.get('/api/wa/lookup', statusAuth, (req, res) => {
+  reloadWaClientsFromDisk();
+  const phone = normalizePhone(req.query.phone || req.query.from || '');
+  if (!phone) return res.json({ ok: false, error: 'phone required' });
+  const c = waClients[phone] || null;
+  res.json({
+    ok: true,
+    phone,
+    registered: !!(c && c.registered),
+    client: c ? {
+      name: c.name, email: c.email, company: c.company,
+      registered: !!c.registered, source: c.source,
+      pending_import: !!c.pending_import, linked_client_id: c.linked_client_id || null,
+      updated_at: c.updated_at,
+    } : null,
+    total_wa_clients: Object.keys(waClients).length,
+  });
 });
 
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '4.0.0',
+    version: '4.1.0',
     codename: 'World Domination Mega Pack · Pinky & the Brain',
-    features: ['admin_portal_v4', 'brain_engine_v4', 'multi_step_flows', 'online_forms_polished', 'q1_q10', 'client_portal'],
+    features: ['admin_portal_v4', 'brain_engine_v4.1', 'realtime_wa_clients', 'multi_step_flows', 'online_forms', 'q1_q10', 'client_portal'],
     ar: PUBLIC_BASE + '/api/ar',
     admin: PUBLIC_BASE + '/admin',
     forms: {
@@ -361,7 +447,13 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: now(), version: '4.0.0', theme: 'pinky-and-the-brain' }));
+app.get('/health', (req, res) => res.json({
+  ok: true,
+  ts: now(),
+  version: '4.1.0',
+  wa_clients: Object.keys(waClients).length,
+  theme: 'pinky-and-the-brain',
+}));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
 
@@ -415,9 +507,11 @@ mountAdmin(app, {
   invoiceStatus, notifications, persistNotifs,
   auth, now, JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE,
   loadJson, saveJson, DATA_DIR, path,
+  pushNotification,
 });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v4.0.0 World Domination Mega Pack on port ${PORT}`);
+  console.log(`SAIP Sync v4.1.0 World Domination Mega Pack on port ${PORT}`);
+  console.log(`Brain engine loaded. WA clients in memory: ${Object.keys(waClients).length}`);
   console.log(`Narf! The same thing we do every night — try to take over the world.`);
 });
