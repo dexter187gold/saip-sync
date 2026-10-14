@@ -1,17 +1,10 @@
-# SA Invoice Pro – Sync Server v4.1.0
+# SA Invoice Pro – Sync Server v4.3.0
 
-Cloud sync + WhatsApp **brain-engine v4.1** + realtime `wa_clients` store + admin portal + public status API.
+**Pinky & the Brain Lab** · cloud sync · WhatsApp brain-engine · realtime `wa_clients` · admin portal
 
-## What’s new in 4.1.0
+> “The same thing we do every night, Pinky — try to take over the world!”
 
-- Full **brain-engine** (no longer a placeholder) — REGISTER, menu, status, jobs, invoices
-- **Real-time** writes to `data/wa_clients.json` so registration sticks immediately
-- Unified SA phone normalisation (`082…` → `2782…`)
-- `GET /api/wa/lookup?phone=…&token=…` for debug
-- Job status outbox for AutoResponder (`/api/ar/outbox`, `/api/tickets/status`)
-- Admin force-register, outbox queue, client lookup
-
-## Admin portal login (default)
+## Admin portal
 
 Open: `https://YOUR-HOST/admin`
 
@@ -20,23 +13,17 @@ Open: `https://YOUR-HOST/admin`
 | **Email** | `admin@sainvoice.pro` |
 | **Password** | `Admin@SAIP2026!` |
 
-Override with env `ADMIN_EMAIL` / `ADMIN_PASSWORD` on Render.
+Case-sensitive. Override with `ADMIN_EMAIL` / `ADMIN_PASSWORD` on Render.
 
-## WhatsApp registration (AutoResponder)
+## v4.3 highlights
 
-Point AR at `POST /api/ar` with status token. Clients can send:
+- Full **Brain Control Lab** admin UI (dashboard, WA, tickets, invoices, outbox, users, tools)
+- Login cold-start wake + clearer errors
+- Force-register, outbox queue, phone lookup
+- Real-time `wa_clients.json` for registration that sticks
+- Job status API for AutoResponder messages
 
-```
-REGISTER
-Name: Full Name
-Email: you@email.com
-```
-
-Or reply `1` for step-by-step. After success, `menu` should show **Profile active**.
-
-Web form: `https://YOUR-HOST/forms/register`
-
-## Quick start (local)
+## Quick start
 
 ```bash
 cp .env.example .env
@@ -44,13 +31,7 @@ npm install
 npm start
 ```
 
-Server: `http://localhost:3847` · Admin: `http://localhost:3847/admin`
-
-## Deploy on Render
-
-1. Web Service → this repo  
-2. Build: `npm install` · Start: `npm start`  
-3. Env:
+## Deploy (Render)
 
 ```
 JWT_SECRET=long-random-secret
@@ -60,19 +41,12 @@ ADMIN_PASSWORD=Admin@SAIP2026!
 PUBLIC_BASE_URL=https://your-service.onrender.com
 ```
 
-**Note:** Free tier disk is ephemeral. Attach a persistent disk to `/opt/render/project/src/data` so WA clients survive redeploys.
+Attach a **persistent disk** to `/opt/render/project/src/data` so WA clients survive redeploys.
 
-## API overview
+## API
 
-- Auth: `POST /api/auth/register` · `POST /api/auth/login`
-- Admin UI: `GET /admin`
-- Admin API: `/api/admin/*` (Bearer JWT)
-- Workspace: `GET/PUT /api/workspace`
-- WA pending: `GET /api/wa/pending` · mark imported `POST /api/wa/pending/:phone/imported`
-- Tickets intake: `GET /api/tickets/intake`
-- Job status push: `POST /api/tickets/status`
-- AutoResponder brain: `POST /api/ar`
-- Status invoice: `GET /api/status/invoice?number=…&token=…`
-- WA lookup: `GET /api/wa/lookup?phone=…&token=…`
-
-See `DOCUMENTATION.md` and `FRONTEND_INTEGRATION.md`.
+- `POST /api/auth/login` · `GET /admin`
+- `POST /api/ar` — AutoResponder brain
+- `GET /api/wa/pending` · `POST /api/tickets/status`
+- `GET /api/wa/lookup?phone=&token=`
+- `GET /health`
