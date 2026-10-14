@@ -3,252 +3,95 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Brain Control Lab v4.2 · SA Invoice Pro</title>
+<title>Brain Control Lab v4.3 · SA Invoice Pro</title>
 <style>
-:root{--bg:#0c0a14;--card:#16122a;--line:#2a2448;--text:#f0e6ff;--muted:#a89bc8;--accent:#e879f9;--ok:#34d399;--danger:#f87171;--blue:#38bdf8}
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:1.45rem;margin:0 0 4px;background:linear-gradient(90deg,#e879f9,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+:root{--bg:#0c0a14;--card:#16122a;--line:#2a2448;--text:#f0e6ff;--muted:#a89bc8;--accent:#e879f9;--cyan:#38bdf8;--ok:#34d399;--danger:#f87171}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:radial-gradient(ellipse 80% 50% at 10% -10%,rgba(192,38,211,.18),transparent 50%),radial-gradient(ellipse 60% 40% at 100% 0%,rgba(56,189,248,.12),transparent 45%),var(--bg);color:var(--text);min-height:100vh}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;margin:0 0 4px;background:linear-gradient(90deg,#f0e6ff,#e879f9,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .sub{color:var(--muted);font-size:.88rem;margin:0 0 14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,.35)}
+.card{background:linear-gradient(165deg,#1a1530,#16122a);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,.35)}
 input,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0f0b1e;color:var(--text);margin:6px 0;font:inherit}
+input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(232,121,249,.2)}
 button,.btn{padding:9px 14px;border-radius:10px;border:0;background:linear-gradient(135deg,#e879f9,#a855f7);color:#1a0a20;font-weight:700;cursor:pointer;margin:3px;font:inherit}
-.btn{display:inline-block;text-decoration:none}
 .btn-ok{background:linear-gradient(135deg,#34d399,#059669);color:#042f2e}
 .btn-danger{background:#f87171;color:#1a0a20}
-.btn-outline,button.secondary{background:#2a2448;color:var(--text)}
+.btn-outline{background:#2a2448;color:var(--text)}
+button:disabled{opacity:.55;cursor:not-allowed}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tabs{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
 .tab{background:#0f0b1e;border:1px solid var(--line);color:var(--muted);padding:9px 14px;border-radius:999px;cursor:pointer}
 .tab.on{color:#fff;border-color:var(--accent);background:linear-gradient(135deg,#2e1065,#4a044e)}
 .hidden{display:none}.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#2a2448;font-size:.72rem}.pill.ok{background:#065f46;color:#a7f3d0}
-table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase}
+table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-size:.72rem;text-transform:uppercase}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
-.stat{background:#0f0b1e;border:1px solid var(--line);border-radius:12px;padding:14px}.stat .l{font-size:.72rem;color:var(--muted);text-transform:uppercase}.stat .v{font-size:1.25rem;font-weight:700;margin-top:4px}
+.stat{background:#0f0b1e;border:1px solid var(--line);border-radius:12px;padding:14px}.stat .l{font-size:.72rem;color:var(--muted);text-transform:uppercase}.stat .v{font-size:1.3rem;font-weight:700;margin-top:4px;background:linear-gradient(90deg,#e879f9,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 #toast{position:fixed;bottom:16px;right:16px;background:#221a3a;border:1px solid var(--line);padding:12px 16px;border-radius:12px;display:none;z-index:99;max-width:320px}
-.brand{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-a{color:var(--blue)} code{font-family:ui-monospace,monospace}
+.brand{font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+a{color:var(--cyan)}code{font-family:ui-monospace,monospace;color:var(--accent)}
+.quote{font-style:italic;color:var(--muted);font-size:.8rem;border-left:3px solid var(--accent);padding-left:10px;margin:12px 0}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div id="login" class="card">
-    <div class="brand">PC REPAIR DEX · SAIP</div>
+    <div class="brand">PC REPAIR DEX · SAIP · PINKY &amp; THE BRAIN</div>
     <h1>Enter the Lab</h1>
-    <p class="sub">Brain Control Lab — admin portal for WhatsApp, tickets, invoices &amp; outbox</p>
-    <input id="email" type="email" placeholder="Email" value="admin@sainvoice.pro" autocomplete="username"/>
+    <p class="sub">Brain Control Lab — WhatsApp, tickets, invoices, outbox &amp; tools</p>
+    <input id="email" type="email" value="admin@sainvoice.pro" autocomplete="username"/>
     <input id="password" type="password" placeholder="Password" autocomplete="current-password"/>
-    <p class="sub" style="margin:4px 0 0;font-size:.8rem">Default password: <code style="color:var(--accent)">Admin@SAIP2026!</code> (case-sensitive)</p>
-    <div class="row" style="margin-top:10px">
-      <button type="button" id="btn-login">Enter the Lab</button>
-    </div>
+    <p class="sub" style="margin:4px 0 0;font-size:.8rem">Default: <code>Admin@SAIP2026!</code> (case-sensitive)</p>
+    <div class="row" style="margin-top:10px"><button type="button" id="btn-login">Enter the Lab</button></div>
     <p id="login-err" class="sub" style="color:var(--danger)"></p>
-    <p id="login-hint" class="sub" style="margin-top:8px"></p>
+    <p id="login-hint" class="sub"></p>
+    <p class="quote">“The same thing we do every night, Pinky — try to take over the world!”</p>
   </div>
-
   <div id="app" class="hidden">
-    <div class="row" style="justify-content:space-between;align-items:flex-start">
-      <div>
-        <div class="brand">World Domination Mega Pack</div>
-        <h1>Brain Control Lab</h1>
-        <p class="sub" id="who"></p>
-      </div>
+    <div class="row" style="justify-content:space-between">
+      <div><div class="brand">World Domination Mega Pack v4.3</div><h1>Brain Control Lab</h1><p class="sub" id="who"></p></div>
       <button type="button" class="btn-outline" id="btn-logout">Logout</button>
     </div>
     <div class="tabs">
       <button type="button" class="tab on" data-tab="dash">Dashboard</button>
       <button type="button" class="tab" data-tab="wa">WA Clients</button>
       <button type="button" class="tab" data-tab="tickets">Tickets</button>
+      <button type="button" class="tab" data-tab="invoices">Invoices</button>
+      <button type="button" class="tab" data-tab="outbox">Outbox</button>
       <button type="button" class="tab" data-tab="users">Users</button>
       <button type="button" class="tab" data-tab="tools">Tools</button>
     </div>
     <div id="panel-dash" class="card"></div>
     <div id="panel-wa" class="card hidden"></div>
     <div id="panel-tickets" class="card hidden"></div>
+    <div id="panel-invoices" class="card hidden"></div>
+    <div id="panel-outbox" class="card hidden"></div>
     <div id="panel-users" class="card hidden"></div>
     <div id="panel-tools" class="card hidden"></div>
   </div>
 </div>
 <div id="toast"></div>
 <script>
-(function () {
-  var token = localStorage.getItem("saip_admin_token") || "";
-
-  function toast(msg) {
-    var el = document.getElementById("toast");
-    el.textContent = msg;
-    el.style.display = "block";
-    setTimeout(function () { el.style.display = "none"; }, 4000);
-  }
-  function showLoginError(msg) {
-    document.getElementById("login-err").textContent = msg || "";
-  }
-  function esc(s) {
-    return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
-  }
-  function api(path, opts) {
-    opts = opts || {};
-    var h = { "Content-Type": "application/json" };
-    if (token) h.Authorization = "Bearer " + token;
-    return fetch(path, {
-      method: opts.method || "GET",
-      headers: h,
-      body: opts.body ? JSON.stringify(opts.body) : undefined
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (data) {
-        if (!r.ok) throw new Error(data.error || r.statusText || "Request failed");
-        return data;
-      });
-    });
-  }
-
-  function showApp() {
-    document.getElementById("login").classList.add("hidden");
-    document.getElementById("app").classList.remove("hidden");
-    loadDash().catch(function (e) { toast(e.message); });
-  }
-
-  function login() {
-    showLoginError("");
-    var hint = document.getElementById("login-hint");
-    if (hint) hint.textContent = "";
-    var email = document.getElementById("email").value.trim();
-    var password = document.getElementById("password").value;
-    if (!email || !password) {
-      showLoginError("Enter email and password.");
-      return;
-    }
-    var btn = document.getElementById("btn-login");
-    btn.disabled = true;
-    btn.textContent = "Signing in…";
-    fetch("/health").catch(function () { return null; }).then(function () {
-      return api("/api/auth/login", { method: "POST", body: { email: email, password: password } });
-    }).then(function (d) {
-      if (!d || !d.token) throw new Error("No token returned");
-      token = d.token;
-      localStorage.setItem("saip_admin_token", token);
-      document.getElementById("who").textContent = (d.user && d.user.email) || email;
-      showApp();
-    }).catch(function (e) {
-      var msg = (e && e.message) ? e.message : String(e);
-      if (/Failed to fetch|NetworkError|Load failed|network/i.test(msg)) {
-        msg = "Network error — server may be waking up. Wait 30s and try again.";
-      } else if (/Invalid email or password/i.test(msg)) {
-        msg = "Invalid email or password. Use Admin@SAIP2026! (capital A, @, 2026, !)";
-      }
-      showLoginError(msg);
-      if (hint) hint.textContent = "Tip: hard-refresh (Ctrl+Shift+R). Clear site data if stuck.";
-    }).finally(function () {
-      btn.disabled = false;
-      btn.textContent = "Enter the Lab";
-    });
-  }
-
-  document.getElementById("btn-login").onclick = login;
-  document.getElementById("password").addEventListener("keydown", function (e) {
-    if (e.key === "Enter") login();
-  });
-  document.getElementById("btn-logout").onclick = function () {
-    token = "";
-    localStorage.removeItem("saip_admin_token");
-    location.reload();
-  };
-
-  document.querySelectorAll("[data-tab]").forEach(function (b) {
-    b.onclick = function () {
-      document.querySelectorAll("[data-tab]").forEach(function (x) { x.classList.remove("on"); });
-      b.classList.add("on");
-      var tab = b.getAttribute("data-tab");
-      ["dash", "wa", "tickets", "users", "tools"].forEach(function (n) {
-        document.getElementById("panel-" + n).classList.toggle("hidden", n !== tab);
-      });
-      if (tab === "wa") loadWa().catch(function (e) { toast(e.message); });
-      if (tab === "tickets") loadTickets().catch(function (e) { toast(e.message); });
-      if (tab === "users") loadUsers().catch(function (e) { toast(e.message); });
-      if (tab === "tools") loadTools();
-      if (tab === "dash") loadDash().catch(function (e) { toast(e.message); });
-    };
-  });
-
-  function loadDash() {
-    return api("/api/admin/stats").then(function (d) {
-      var s = d.stats || {};
-      document.getElementById("panel-dash").innerHTML =
-        "<h3 style=\"margin:0 0 12px\">Dashboard</h3><div class=\"stat-grid\">" +
-        "<div class=\"stat\"><div class=\"l\">Users</div><div class=\"v\">" + (s.users || 0) + "</div></div>" +
-        "<div class=\"stat\"><div class=\"l\">WA clients</div><div class=\"v\">" + (s.wa_clients || 0) + "</div></div>" +
-        "<div class=\"stat\"><div class=\"l\">Registered</div><div class=\"v\">" + (s.wa_registered || 0) + "</div></div>" +
-        "<div class=\"stat\"><div class=\"l\">Tickets</div><div class=\"v\">" + (s.tickets_total || 0) + "</div></div>" +
-        "</div><p class=\"sub\">Forms: <a href=\"/forms/register\" target=\"_blank\">Register</a> · <a href=\"/forms/job\" target=\"_blank\">Job</a></p>";
-    });
-  }
-
-  function loadWa() {
-    return api("/api/admin/wa-clients").then(function (d) {
-      var rows = (d.clients || []).map(function (c) {
-        return "<tr><td>" + esc(c.name) + "<div style=\"color:var(--muted);font-size:.75rem\">" + esc(c.phone) + "</div></td><td>" +
-          (c.registered ? "<span class=\"pill ok\">yes</span>" : "<span class=\"pill\">no</span>") +
-          "</td><td><button type=\"button\" class=\"btn-ok\" data-act=\"force-wa\" data-phone=\"" + esc(c.phone) + "\">Mark reg</button> " +
-          "<button type=\"button\" class=\"btn-danger\" data-act=\"delwa\" data-phone=\"" + esc(c.phone) + "\">Remove</button></td></tr>";
-      }).join("");
-      document.getElementById("panel-wa").innerHTML =
-        "<h3>WhatsApp clients (" + (d.count || 0) + ")</h3><table><thead><tr><th>Client</th><th>Reg</th><th>Actions</th></tr></thead><tbody>" +
-        (rows || "<tr><td colspan=3>None yet</td></tr>") + "</tbody></table>";
-    });
-  }
-
-  function loadTickets() {
-    return api("/api/admin/tickets").then(function (d) {
-      var rows = (d.tickets || []).map(function (t) {
-        return "<tr><td>" + esc(t.customer_name) + "</td><td>" + esc(t.device) + "</td><td>" + esc(t.issue) + "</td><td>" + esc(t.status) + "</td></tr>";
-      }).join("");
-      document.getElementById("panel-tickets").innerHTML =
-        "<h3>Intake tickets</h3><table><thead><tr><th>Customer</th><th>Device</th><th>Issue</th><th>Status</th></tr></thead><tbody>" +
-        (rows || "<tr><td colspan=4>None</td></tr>") + "</tbody></table>";
-    });
-  }
-
-  function loadUsers() {
-    return api("/api/admin/users").then(function (d) {
-      var rows = (d.users || []).map(function (u) {
-        return "<tr><td>" + esc(u.email) + "</td><td>" + esc(u.role) + "</td></tr>";
-      }).join("");
-      document.getElementById("panel-users").innerHTML =
-        "<h3>Users</h3><table><thead><tr><th>Email</th><th>Role</th></tr></thead><tbody>" + rows + "</tbody></table>";
-    });
-  }
-
-  function loadTools() {
-    document.getElementById("panel-tools").innerHTML =
-      "<h3>Tools</h3><p class=\"sub\"><a href=\"/health\" target=\"_blank\">Health</a> · <a href=\"/forms/register\" target=\"_blank\">Register form</a> · <a href=\"/api/ar\" target=\"_blank\">AR brain</a></p>";
-  }
-
-  document.body.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-act]");
-    if (!btn) return;
-    var act = btn.getAttribute("data-act");
-    if (act === "delwa") {
-      if (!confirm("Remove?")) return;
-      api("/api/admin/wa-clients/" + btn.getAttribute("data-phone"), { method: "DELETE" })
-        .then(function () { toast("Removed"); return loadWa(); })
-        .catch(function (err) { toast(err.message); });
-    } else if (act === "force-wa") {
-      api("/api/admin/wa-clients/" + btn.getAttribute("data-phone") + "/force-register", { method: "POST", body: {} })
-        .then(function () { toast("Marked registered"); return loadWa(); })
-        .catch(function (err) { toast(err.message); });
-    }
-  });
-
-  if (token) {
-    api("/api/admin/me").then(function (d) {
-      document.getElementById("who").textContent = (d.admin && d.admin.email) || "";
-      showApp();
-    }).catch(function () {
-      localStorage.removeItem("saip_admin_token");
-      token = "";
-    });
-  }
+(function(){
+  var token=localStorage.getItem("saip_admin_token")||"";
+  function toast(m){var e=document.getElementById("toast");e.textContent=m;e.style.display="block";setTimeout(function(){e.style.display="none"},4000)}
+  function showLoginError(m){document.getElementById("login-err").textContent=m||""}
+  function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;")}
+  function api(path,opts){opts=opts||{};var h={"Content-Type":"application/json"};if(token)h.Authorization="Bearer "+token;return fetch(path,{method:opts.method||"GET",headers:h,body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){return r.json().catch(function(){return{}}).then(function(data){if(!r.ok)throw new Error(data.error||r.statusText||"Request failed");return data})})}
+  function showApp(){document.getElementById("login").classList.add("hidden");document.getElementById("app").classList.remove("hidden");loadDash().catch(function(e){toast(e.message)})}
+  function login(){showLoginError("");var hint=document.getElementById("login-hint");if(hint)hint.textContent="";var email=document.getElementById("email").value.trim();var password=document.getElementById("password").value;if(!email||!password){showLoginError("Enter email and password.");return}var btn=document.getElementById("btn-login");btn.disabled=true;btn.textContent="Signing in…";fetch("/health").catch(function(){return null}).then(function(){return api("/api/auth/login",{method:"POST",body:{email:email,password:password}})}).then(function(d){if(!d||!d.token)throw new Error("No token");token=d.token;localStorage.setItem("saip_admin_token",token);document.getElementById("who").textContent=(d.user&&d.user.email)||email;showApp()}).catch(function(e){var msg=(e&&e.message)?e.message:String(e);if(/Failed to fetch|NetworkError|network/i.test(msg))msg="Network error — server waking up. Wait 30s and try again.";else if(/Invalid email or password/i.test(msg))msg="Invalid password. Use Admin@SAIP2026! (case-sensitive)";showLoginError(msg);if(hint)hint.textContent="Tip: hard-refresh (Ctrl+Shift+R)."}).finally(function(){btn.disabled=false;btn.textContent="Enter the Lab"})}
+  document.getElementById("btn-login").onclick=login;
+  document.getElementById("password").addEventListener("keydown",function(e){if(e.key==="Enter")login()});
+  document.getElementById("btn-logout").onclick=function(){token="";localStorage.removeItem("saip_admin_token");location.reload()};
+  document.querySelectorAll("[data-tab]").forEach(function(b){b.onclick=function(){document.querySelectorAll("[data-tab]").forEach(function(x){x.classList.remove("on")});b.classList.add("on");var tab=b.getAttribute("data-tab");["dash","wa","tickets","invoices","outbox","users","tools"].forEach(function(n){document.getElementById("panel-"+n).classList.toggle("hidden",n!==tab)});if(tab==="wa")loadWa().catch(function(e){toast(e.message)});if(tab==="tickets")loadTickets().catch(function(e){toast(e.message)});if(tab==="invoices")loadInvoices().catch(function(e){toast(e.message)});if(tab==="outbox")loadOutbox().catch(function(e){toast(e.message)});if(tab==="users")loadUsers().catch(function(e){toast(e.message)});if(tab==="tools")loadTools();if(tab==="dash")loadDash().catch(function(e){toast(e.message)})}});
+  function loadDash(){return api("/api/admin/stats").then(function(d){var s=d.stats||{};document.getElementById("panel-dash").innerHTML='<h3 style="margin:0 0 12px">Dashboard</h3><div class="stat-grid"><div class="stat"><div class="l">Users</div><div class="v">'+(s.users||0)+'</div></div><div class="stat"><div class="l">WA clients</div><div class="v">'+(s.wa_clients||0)+'</div></div><div class="stat"><div class="l">Registered</div><div class="v">'+(s.wa_registered||0)+'</div></div><div class="stat"><div class="l">Pending import</div><div class="v">'+(s.wa_pending_import||0)+'</div></div><div class="stat"><div class="l">Tickets</div><div class="v">'+(s.tickets_total||0)+'</div></div><div class="stat"><div class="l">Outbox</div><div class="v">'+(s.outbox_pending||0)+'</div></div></div><p class="sub"><a href="/forms/register" target="_blank">Register</a> · <a href="/forms/job" target="_blank">Job</a> · <a href="/health" target="_blank">Health</a></p><p class="quote">Narf! Lab systems online.</p>'})}
+  function loadWa(){return api("/api/admin/wa-clients").then(function(d){var rows=(d.clients||[]).map(function(c){var phone=esc(c.phone);return "<tr><td>"+esc(c.name||"—")+'<div style="color:var(--muted);font-size:.75rem">'+phone+"</div></td><td>"+esc(c.email||"—")+"</td><td>"+(c.registered?'<span class="pill ok">yes</span>':'<span class="pill">no</span>')+"</td><td class="row">"+(c.registered?"":"<button type=\"button\" class=\"btn-ok\" data-act=\"force-wa\" data-phone=\""+phone+"\">Mark reg</button>")+"<button type=\"button\" class=\"btn-danger\" data-act=\"delwa\" data-phone=\""+phone+"\">Remove</button></td></tr>"}).join("");document.getElementById("panel-wa").innerHTML="<h3>WhatsApp clients ("+(d.count||0)+")</h3><table><thead><tr><th>Client</th><th>Email</th><th>Reg</th><th>Actions</th></tr></thead><tbody>"+(rows||'<tr><td colspan=4>None yet</td></tr>')+"</tbody></table>"})}
+  function loadTickets(){return api("/api/admin/tickets").then(function(d){var rows=(d.tickets||[]).map(function(t){return "<tr><td>"+esc(t.customer_name||"—")+"</td><td>"+esc(t.device||"—")+"</td><td>"+esc(t.issue||"—")+"</td><td>"+esc(t.status||"new")+"</td></tr>"}).join("");document.getElementById("panel-tickets").innerHTML="<h3>Intake tickets</h3><table><thead><tr><th>Customer</th><th>Device</th><th>Issue</th><th>Status</th></tr></thead><tbody>"+(rows||'<tr><td colspan=4>None</td></tr>')+"</tbody></table>"})}
+  function loadInvoices(){return api("/api/admin/invoices").then(function(d){var rows=(d.invoices||[]).map(function(i){return "<tr><td>"+esc(i.invoice_number)+"</td><td>"+esc(i.client_name||"—")+"</td><td>R"+Number(i.balance_due??i.total||0).toFixed(2)+"</td><td>"+esc(i.status)+"</td></tr>"}).join("");document.getElementById("panel-invoices").innerHTML="<h3>Invoice status</h3><table><thead><tr><th>Number</th><th>Client</th><th>Balance</th><th>Status</th></tr></thead><tbody>"+(rows||'<tr><td colspan=4>None</td></tr>')+"</tbody></table>"})}
+  function loadOutbox(){return api("/api/admin/outbox").then(function(d){var rows=(d.messages||[]).map(function(m){return "<tr><td>"+esc(m.phone)+"</td><td>"+esc((m.message||"").slice(0,120))+"</td><td>"+(m.delivered?"sent":"pending")+"</td></tr>"}).join("");document.getElementById("panel-outbox").innerHTML="<h3>Outbox ("+(d.pending||0)+" pending)</h3><div class="row"><input id="ob-phone" placeholder="2782…" style="flex:1"/><textarea id="ob-msg" rows=2 style="flex:2"></textarea><button type=\"button\" class=\"btn\" data-act=\"queue-outbox\">Queue</button></div><table><thead><tr><th>Phone</th><th>Message</th><th>Status</th></tr></thead><tbody>"+(rows||'<tr><td colspan=3>Empty</td></tr>')+"</tbody></table>"})}
+  function loadUsers(){return api("/api/admin/users").then(function(d){var rows=(d.users||[]).map(function(u){return "<tr><td>"+esc(u.email)+"</td><td>"+esc(u.role)+"</td></tr>"}).join("");document.getElementById("panel-users").innerHTML="<h3>Users</h3><table><thead><tr><th>Email</th><th>Role</th></tr></thead><tbody>"+rows+"</tbody></table>"})}
+  function loadTools(){document.getElementById("panel-tools").innerHTML='<h3>Lab tools</h3><div class="row"><input id="tool-phone" placeholder="082…" style="flex:1"/><button type="button" class="btn" data-act="lookup">Lookup</button></div><pre id="tool-result" style="font-size:.8rem;color:var(--muted)"></pre><div class="row" style="margin-top:12px"><input id="force-phone" placeholder="Phone" style="flex:1"/><input id="force-name" placeholder="Name" style="flex:1"/><button type="button" class="btn-ok" data-act="force-reg">Force register</button></div>'}
+  document.body.addEventListener("click",function(e){var btn=e.target.closest("[data-act]");if(!btn)return;var act=btn.getAttribute("data-act");if(act==="delwa"){if(!confirm("Remove?"))return;api("/api/admin/wa-clients/"+btn.getAttribute("data-phone"),{method:"DELETE"}).then(function(){toast("Removed");return loadWa()}).catch(function(err){toast(err.message)})}else if(act==="force-wa"){api("/api/admin/wa-clients/"+btn.getAttribute("data-phone")+"/force-register",{method:"POST",body:{}}).then(function(){toast("Marked registered");return loadWa()}).catch(function(err){toast(err.message)})}else if(act==="queue-outbox"){api("/api/admin/outbox/queue",{method:"POST",body:{phone:document.getElementById("ob-phone").value,message:document.getElementById("ob-msg").value}}).then(function(){toast("Queued");return loadOutbox()}).catch(function(err){toast(err.message)})}else if(act==="lookup"){api("/api/admin/lookup?phone="+encodeURIComponent(document.getElementById("tool-phone").value)).then(function(d){document.getElementById("tool-result").textContent=JSON.stringify(d,null,2)}).catch(function(err){toast(err.message)})}else if(act==="force-reg"){var fp=document.getElementById("force-phone").value;api("/api/admin/wa-clients/"+encodeURIComponent(fp.replace(/\D/g,""))+"/force-register",{method:"POST",body:{name:document.getElementById("force-name").value||"Client"}}).then(function(){toast("Registered");return loadWa()}).catch(function(err){toast(err.message)})}});
+  if(token){api("/api/admin/me").then(function(d){document.getElementById("who").textContent=(d.admin&&d.admin.email)||"";showApp()}).catch(function(){localStorage.removeItem("saip_admin_token");token=""})}
 })();
 </script>
 </body>
