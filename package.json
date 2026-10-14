@@ -1,7 +1,7 @@
 {
   "name": "saip-sync",
-  "version": "4.1.0",
-  "description": "SA Invoice Pro – World Domination Mega Pack · Pinky & the Brain · multi-device sync + AR brain v4.1 + realtime wa_clients + admin portal",
+  "version": "4.3.0",
+  "description": "SA Invoice Pro – Pinky & the Brain Lab · multi-device sync + AR brain v4.3 + realtime wa_clients + admin portal",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
