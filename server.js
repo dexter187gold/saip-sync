@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro – Sync Server v4.3.0
+ * SA Invoice Pro - Sync Server v4.3.0
  * World Domination Mega Pack · Pinky & the Brain Edition
  * Real-time wa_clients store · full brain-engine · registration that sticks
  */
@@ -69,9 +69,7 @@ function saveJson(file, obj) {
     fs.renameSync(tmp, file);
   } catch (e) {
     console.error('saveJson', file, e.message);
-    try {
-      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8');
-    } catch (e2) {
+    try { fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8'); } catch (e2) {
       console.error('saveJson direct', file, e2.message);
     }
   }
@@ -103,9 +101,7 @@ function reloadWaClientsFromDisk() {
         waClients[k] = v;
       }
     }
-  } catch (e) {
-    console.error('reloadWaClientsFromDisk', e.message);
-  }
+  } catch (e) { console.error('reloadWaClientsFromDisk', e.message); }
 }
 
 app.use(cors());
@@ -118,12 +114,8 @@ function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Missing token' });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
+  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
+  catch { return res.status(401).json({ error: 'Invalid or expired token' }); }
 }
 
 function extractStatusToken(req) {
@@ -138,7 +130,7 @@ function extractStatusToken(req) {
 function statusAuth(req, res, next) {
   const token = extractStatusToken(req);
   if (!token || !ALLOWED_STATUS_TOKENS.has(token)) {
-    return res.type('text/plain').status(403).send('⚠️ Invalid status token.\n\nReply *menu* for options.');
+    return res.type('text/plain').status(403).send('Invalid status token.\n\nReply *menu* for options.');
   }
   next();
 }
@@ -175,10 +167,10 @@ function pushNotification(n) {
 
 function formatInvoiceText(inv, found) {
   if (!found || !inv) {
-    return ['📄 *Invoice status*', '', 'Sorry — invoice not found or not linked to this WhatsApp number.', 'Use your exact number (e.g. INV-2026-0001).', '', 'Reply *menu* for options.'].join('\n');
+    return ['*Invoice status*', '', 'Sorry - invoice not found or not linked to this WhatsApp number.', 'Use your exact number (e.g. INV-2026-0001).', '', 'Reply *menu* for options.'].join('\n');
   }
-  const lines = ['📄 *Invoice ' + inv.invoice_number + '*', '', '👤 ' + (inv.client_name || 'Client)', '💵 Total: ' + moneyR(inv.total), '💳 Balance: ' + moneyR(inv.balance_due), '📊 Status: *' + String(inv.status || 'unpaid').toUpperCase() + '*'];
-  if (inv.due_date) lines.push('📅 Due: ' + String(inv.due_date).slice(0, 10));
+  const lines = ['*Invoice ' + inv.invoice_number + '*', '', '' + (inv.client_name || 'Client'), 'Total: ' + moneyR(inv.total), 'Balance: ' + moneyR(inv.balance_due), 'Status: *' + String(inv.status || 'unpaid').toUpperCase() + '*'];
+  if (inv.due_date) lines.push('Due: ' + String(inv.due_date).slice(0, 10));
   lines.push('', 'Reply *menu* for more options.');
   return lines.join('\n');
 }
@@ -248,7 +240,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString();
   passwordResets[token] = { email, expires, used: false, created_at: now() };
   persistResets();
-  res.json({ ok: true, message: 'If that email exists, a reset link was created.', reset_url: `${PUBLIC_BASE}/reset-password?token=${token}`, expires_in_hours: RESET_TOKEN_HOURS });
+  res.json({ ok: true, message: 'If that email exists, a reset link was created.', reset_url: PUBLIC_BASE + '/reset-password?token=' + token, expires_in_hours: RESET_TOKEN_HOURS });
 });
 
 app.post('/api/auth/reset-password', (req, res) => {
@@ -309,7 +301,7 @@ app.post('/api/status/push', auth, (req, res) => {
   for (const inv of invoices) {
     if (!inv || !inv.invoice_number) continue;
     const number = normalizeInvoiceQuery(inv.invoice_number);
-    const key = `${req.user.id}::${number}`;
+    const key = req.user.id + '::' + number;
     invoiceStatus[key] = { id: inv.id || uuidv4(), user_id: req.user.id, invoice_number: number, client_name: inv.client_name || null, client_phone: normalizePhone(inv.client_phone), total: inv.total ?? null, balance_due: inv.balance_due ?? null, status: inv.status || 'unpaid', due_date: inv.due_date || null, last_payment_at: inv.last_payment_at || null, updated_at: ts };
     count++;
   }
@@ -332,7 +324,7 @@ function syncInvoiceStatus(userId, workspace) {
     if (balance <= 0) status = 'paid';
     else if (paid > 0) status = 'partial';
     else if (inv.dueDate && new Date(inv.dueDate) < new Date()) status = 'overdue';
-    invoiceStatus[`${userId}::${number}`] = { id: inv.id || uuidv4(), user_id: userId, invoice_number: number, client_name: client.name || inv.clientName || null, client_phone: normalizePhone(client.phone || inv.clientPhone), total, balance_due: balance, status, due_date: inv.dueDate || null, last_payment_at: inv.lastPaymentAt || null, updated_at: ts };
+    invoiceStatus[userId + '::' + number] = { id: inv.id || uuidv4(), user_id: userId, invoice_number: number, client_name: client.name || inv.clientName || null, client_phone: normalizePhone(client.phone || inv.clientPhone), total, balance_due: balance, status, due_date: inv.dueDate || null, last_payment_at: inv.lastPaymentAt || null, updated_at: ts };
   }
   persistStatus();
 }
@@ -349,7 +341,7 @@ app.get('/api/status/invoice', statusAuth, (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
   if (!number || number === '$1') return res.type('text/plain').send('Invoice number required.');
   const inv = findInvoiceStatus(number, phone || null);
-  if (inv && inv.denied) return res.type('text/plain').send('🔒 Not linked to this number.');
+  if (inv && inv.denied) return res.type('text/plain').send('Not linked to this number.');
   if (!inv) return res.type('text/plain').send(formatInvoiceText(null, false));
   return res.type('text/plain').send(formatInvoiceText(inv, true));
 });
@@ -388,7 +380,7 @@ app.get('/', (req, res) => {
     ar: PUBLIC_BASE + '/api/ar',
     admin: PUBLIC_BASE + '/admin',
     forms: { register: PUBLIC_BASE + '/forms/register', job: PUBLIC_BASE + '/forms/job' },
-    quote: 'The same thing we do every night, Pinky — try to take over the world!',
+    quote: 'The same thing we do every night, Pinky - try to take over the world!',
   });
 });
 
@@ -397,7 +389,6 @@ app.get('/health', (req, res) => res.json({
 }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
-
 mountQuarters(app, { DATA_DIR, loadJson, saveJson, workspaces, invoiceStatus, waClients, auth, statusAuth, now, pushNotification, PUBLIC_BASE });
 mountQuartersLate(app, { DATA_DIR, loadJson, saveJson, workspaces, invoiceStatus, waClients, auth, statusAuth, now, pushNotification, PUBLIC_BASE });
 mountFlows(app, { DATA_DIR, loadJson, saveJson, sessions, persistSessions, waClients, persistWaClients, ticketsIntake, persistTickets, auth, statusAuth, now, pushNotification, PUBLIC_BASE, normalizePhone });
@@ -406,7 +397,7 @@ mountArBrain(app, { createBrainEngine, waClients, persistWaClients, ticketsIntak
 mountAdmin(app, { users, persistUsers, workspaces, persistWorkspaces, waClients, persistWaClients, ticketsIntake, persistTickets, invoiceStatus, notifications, auth, now, JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE, loadJson, saveJson, DATA_DIR, path, pushNotification, persistNotifs });
 
 app.listen(PORT, () => {
-  console.log(`SAIP Sync v4.3.0 World Domination Mega Pack on port ${PORT}`);
-  console.log(`Brain engine loaded. WA clients in memory: ${Object.keys(waClients).length}`);
-  console.log(`Narf! The same thing we do every night — try to take over the world.`);
+  console.log('SAIP Sync v4.3.0 World Domination Mega Pack on port ' + PORT);
+  console.log('Brain engine loaded. WA clients in memory: ' + Object.keys(waClients).length);
+  console.log('Narf! The same thing we do every night - try to take over the world.');
 });
