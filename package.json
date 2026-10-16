@@ -1,15 +1,13 @@
 {
   "name": "saip-sync",
-  "version": "4.3.0",
-  "description": "SA Invoice Pro – Pinky & the Brain Lab · multi-device sync + AR brain v4.3 + realtime wa_clients + admin portal",
+  "version": "5.0.0",
+  "description": "SA Invoice Pro Lab v5 — live config, secrets portal, AR brain, multi-device sync",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "engines": {
-    "node": "20.x"
-  },
+  "engines": { "node": "20.x" },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
