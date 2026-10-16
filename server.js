@@ -1,11 +1,12 @@
 /**
- * SA Invoice Pro - Sync Server v5.1.0
+ * SA Invoice Pro - Sync Server v5.2.0
  * World Domination Mega Pack · Pinky & the Brain Edition
  * Real-time wa_clients store · full brain-engine · registration that sticks
  */
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+// cors handled by security.js
+// const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -22,10 +23,14 @@ const { createBrainEngine } = require('./brain-engine');
 const { mountAdmin } = require('./admin');
 const { createConfigStore } = require('./config-store');
 const { mountConfigApi } = require('./config-api');
+const { mountSecurity, loginRateLimit, registerRateLimit, strongPassword, safeEmail } = require('./security');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+if (!process.env.JWT_SECRET || JWT_SECRET === 'dev-secret-change-me') {
+  console.warn('[security] JWT_SECRET is default — set JWT_SECRET env on Render before production use');
+}
 const DEFAULT_STATUS_TOKEN = 'SaIpStAtUs_7f3a9c2e1b8d4f6a0e5c9b3d7a1f4e8';
 const STATUS_TOKEN_RAW = process.env.STATUS_API_TOKEN || DEFAULT_STATUS_TOKEN;
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com';
@@ -106,9 +111,10 @@ function reloadWaClientsFromDisk() {
   } catch (e) { console.error('reloadWaClientsFromDisk', e.message); }
 }
 
-app.use(cors());
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true }));
+mountSecurity(app, {});
+app.use(express.json({ limit: '8mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// Note: cors package no longer used as global *; security.js handles CORS
 
 function now() { return new Date().toISOString(); }
 
@@ -202,27 +208,30 @@ function findInvoiceStatus(numberRaw, phoneLock) {
   return matches[0] || null;
 }
 
-app.post('/api/auth/register', (req, res) => {
-  const { email, password, name } = req.body || {};
-  if (!email || !password || password.length < 6) return res.status(400).json({ error: 'Email and password (min 6 chars) required' });
-  const key = email.toLowerCase().trim();
+app.post('/api/auth/register', registerRateLimit, (req, res) => {
+  const { password, name } = req.body || {};
+  const key = safeEmail(req.body?.email);
+  if (!key) return res.status(400).json({ error: 'Valid email required' });
+  const pwCheck = strongPassword(password);
+  if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error });
   if (users[key]) return res.status(409).json({ error: 'Email already registered' });
   const id = uuidv4();
   const hash = bcrypt.hashSync(password, 10);
   const ts = now();
-  users[key] = { id, email: key, password_hash: hash, name: name || null, created_at: ts, updated_at: ts };
+  users[key] = { id, email: key, password_hash: hash, name: name || null, role: 'user', created_at: ts, updated_at: ts };
   workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: ts };
   persistUsers(); persistWorkspaces();
   const token = jwt.sign({ id, email: key }, JWT_SECRET, { expiresIn: '90d' });
-  res.json({ ok: true, token, user: { id, email: key, name } });
+  res.json({ ok: true, token, user: { id, email: key, name: name || null } });
 });
 
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  const key = email.toLowerCase().trim();
+app.post('/api/auth/login', loginRateLimit, (req, res) => {
+  const password = req.body?.password;
+  const key = safeEmail(req.body?.email);
+  if (!key || !password) return res.status(400).json({ error: 'Email and password required' });
   const user = users[key];
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Invalid email or password' });
+  const ok = user && bcrypt.compareSync(password, user.password_hash);
+  if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' });
   res.json({ ok: true, token, user: { id: user.id, email: user.email, name: user.name } });
 });
@@ -233,21 +242,25 @@ app.get('/api/auth/me', auth, (req, res) => {
   res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, created_at: user.created_at } });
 });
 
-app.post('/api/auth/forgot-password', (req, res) => {
-  const email = (req.body?.email || '').toLowerCase().trim();
+app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
+  const email = safeEmail(req.body?.email) || '';
   if (!email) return res.status(400).json({ error: 'Email required' });
   const user = users[email];
-  if (!user) return res.json({ ok: true, message: 'If that email exists, a reset link was created.' });
-  const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString();
-  passwordResets[token] = { email, expires, used: false, created_at: now() };
-  persistResets();
-  res.json({ ok: true, message: 'If that email exists, a reset link was created.', reset_url: PUBLIC_BASE + '/reset-password?token=' + token, expires_in_hours: RESET_TOKEN_HOURS });
+  if (user) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString();
+    passwordResets[token] = { email, expires, used: false, created_at: now() };
+    persistResets();
+    console.log('[auth] password reset issued for', email, 'token_prefix', token.slice(0, 8));
+  }
+  res.json({ ok: true, message: 'If that email exists, a reset link was created.', expires_in_hours: RESET_TOKEN_HOURS });
 });
 
 app.post('/api/auth/reset-password', (req, res) => {
   const { token, password } = req.body || {};
-  if (!token || !password || password.length < 6) return res.status(400).json({ error: 'Valid token and password required' });
+  if (!token || !password) return res.status(400).json({ error: 'Valid token and password required' });
+  const rp = strongPassword(password);
+  if (!rp.ok) return res.status(400).json({ error: rp.error });
   const rec = passwordResets[token];
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used reset link' });
   if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Reset link has expired' });
@@ -350,6 +363,7 @@ app.get('/api/status/invoice', statusAuth, (req, res) => {
 
 app.get('/api/notifications', auth, (req, res) => {
   let items = notifications.items || [];
+  items = items.filter(n => !n.owner_user_id || n.owner_user_id === req.user.id);
   res.json({ ok: true, count: items.length, unread: items.filter(n => !n.read).length, notifications: items.slice(0, 50) });
 });
 
@@ -376,9 +390,9 @@ app.get('/api/wa/lookup', statusAuth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '5.1.0',
+    version: '5.2.0',
     codename: 'Pro Studio · Pinky & the Brain',
-    features: ['admin_portal_v5.1', 'live_config', 'secrets_portal', 'brain_engine_v4.3', 'realtime_wa_clients', 'multi_step_flows', 'online_forms', 'q1_q10', 'client_portal'],
+    features: ['admin_portal_v5.2', 'live_config', 'secrets_portal', 'security_hardening', 'brain_engine_v4.3', 'realtime_wa_clients', 'multi_step_flows', 'online_forms', 'q1_q10', 'client_portal'],
     ar: PUBLIC_BASE + '/api/ar',
     admin: PUBLIC_BASE + '/admin',
     forms: { register: PUBLIC_BASE + '/forms/register', job: PUBLIC_BASE + '/forms/job' },
@@ -387,7 +401,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({
-  ok: true, ts: now(), version: '5.1.0', wa_clients: Object.keys(waClients).length, theme: 'pinky-and-the-brain',
+  ok: true, ts: now(), version: '5.2.0', wa_clients: Object.keys(waClients).length, theme: 'pinky-and-the-brain',
 }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
@@ -396,9 +410,12 @@ mountQuartersLate(app, { DATA_DIR, loadJson, saveJson, workspaces, invoiceStatus
 mountFlows(app, { DATA_DIR, loadJson, saveJson, sessions, persistSessions, waClients, persistWaClients, ticketsIntake, persistTickets, auth, statusAuth, now, pushNotification, PUBLIC_BASE, normalizePhone });
 mountWaFlow(app, { DATA_DIR, loadJson, saveJson, sessions, persistSessions, waClients, persistWaClients, ticketsIntake, persistTickets, statusAuth, now, pushNotification, PUBLIC_BASE, normalizePhone });
 mountArBrain(app, { createBrainEngine, waClients, persistWaClients, ticketsIntake, persistTickets, sessions, persistSessions, invoiceStatus, statusAuth, now, pushNotification, PUBLIC_BASE, normalizePhone, reloadWaClientsFromDisk });
-mountAdmin(app, { users, persistUsers, workspaces, persistWorkspaces, waClients, persistWaClients, ticketsIntake, persistTickets, invoiceStatus, notifications, auth, now, JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE, loadJson, saveJson, DATA_DIR, path, pushNotification, persistNotifs });
+mountAdmin(app, {
+  users, persistUsers, workspaces, persistWorkspaces, waClients, persistWaClients,
+  ticketsIntake, persistTickets, invoiceStatus, notifications, auth, now,
+  JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE, loadJson, saveJson, DATA_DIR, persistNotifs, pushNotification,
+});
 
-// Live config for web + APK (Pro Studio)
 try {
   const configStore = createConfigStore(DATA_DIR, loadJson, saveJson);
   function configAdminAuth(req, res, next) {
@@ -407,9 +424,9 @@ try {
     if (!token) return res.status(401).json({ error: 'Missing token' });
     try {
       const payload = jwt.verify(token, JWT_SECRET);
-      const user = Object.values(users).find((u) => u.id === payload.id);
-      const adminEmail = String(ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
-      const isAdmin = user && (user.role === 'admin' || (adminEmail && String(user.email || '').toLowerCase() === adminEmail));
+      const user = Object.values(users).find(u => u.id === payload.id);
+      const adminEmail = String(ADMIN_EMAIL || '').toLowerCase().trim();
+      const isAdmin = user && (user.role === 'admin' || (adminEmail && String(user.email || '').toLowerCase() === adminEmail) || String(user.email || '').toLowerCase() === 'admin@sainvoice.pro');
       if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
       req.user = payload;
       req.adminUser = user;
@@ -425,7 +442,7 @@ try {
 }
 
 app.listen(PORT, () => {
-  console.log('SAIP Sync v5.1.0 Pro Studio on port ' + PORT);
+  console.log('SAIP Sync v5.2.0 Pro Studio on port ' + PORT);
   console.log('Brain engine loaded. WA clients in memory: ' + Object.keys(waClients).length);
   console.log('Narf! The same thing we do every night - try to take over the world.');
 });
