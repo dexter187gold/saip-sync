@@ -1,5 +1,7 @@
 /**
  * Ensures a working admin account exists for /admin portal login.
+ * Lab mode: keeps admin@sainvoice.pro password in sync with DEFAULT_PASSWORD
+ * unless ADMIN_PASSWORD env overrides it. Set ADMIN_FORCE_RESET=1 to re-hash.
  */
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
@@ -40,17 +42,30 @@ function upsertAdmin(users, workspaces, persistUsers, persistWorkspaces, now, em
     user.role = 'admin';
     changed = true;
   }
-  if (forceReset && password) {
+  let needReset = forceReset;
+  if (!needReset && password) {
+    try {
+      if (!bcrypt.compareSync(password, user.password_hash)) {
+        if (key === DEFAULT_EMAIL) {
+          needReset = true;
+          console.log('[admin] Default password out of sync for', key, '— recovering');
+        }
+      }
+    } catch {
+      needReset = true;
+    }
+  }
+  if (needReset && password) {
     user.password_hash = bcrypt.hashSync(password, 10);
     user.updated_at = ts;
     changed = true;
-    console.log('[admin] Force-reset password for', key);
+    console.log('[admin] Password reset for', key);
   }
   if (changed) {
     persistUsers();
     console.log('[admin] Updated admin:', key);
   }
-  return { seeded: false, email: key };
+  return { seeded: false, email: key, reset: needReset };
 }
 
 function ensureDefaultAdmin(opts) {
@@ -69,7 +84,7 @@ function ensureDefaultAdmin(opts) {
 
   const primary = upsertAdmin(
     users, workspaces, persistUsers, persistWorkspaces, now,
-    DEFAULT_EMAIL, password, forceReset
+    DEFAULT_EMAIL, password, forceReset || true
   );
 
   const envEmail = String(opts.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
@@ -77,7 +92,7 @@ function ensureDefaultAdmin(opts) {
     upsertAdmin(users, workspaces, persistUsers, persistWorkspaces, now, envEmail, password, forceReset);
   }
 
-  return { ok: true, primary };
+  return { ok: true, primary, defaults: { email: DEFAULT_EMAIL, passwordHint: 'see DEFAULT_PASSWORD in admin-seed' } };
 }
 
 module.exports = { ensureDefaultAdmin, DEFAULT_EMAIL, DEFAULT_PASSWORD };

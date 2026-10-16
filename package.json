@@ -1,7 +1,7 @@
 {
   "name": "saip-sync",
-  "version": "5.1.0",
-  "description": "SA Invoice Pro Lab v5.1 Pro Studio — live config, secrets portal, AR brain, multi-device sync",
+  "version": "5.2.0",
+  "description": "SA Invoice Pro Lab v5.2 Pro Studio Q2 — live config, secrets portal, AR brain, multi-device sync",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
