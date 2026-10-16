@@ -19,17 +19,17 @@ function defaultConfig() {
   return {
     public: {
       google_client_id: '',
-      app_version: '5.0.0',
-      min_app_version: '4.3.0',
+      app_version: '5.1.0',
+      min_app_version: '5.0.0',
       feature_flags: { oauth_google: true, pdfjs_preview: true, wa_import: true, reports_export: true },
       support_whatsapp: '',
       support_email: 'support@sainvoice.pro',
       maintenance_message: '',
       theme_default: 'brain',
-      document_types_enabled: ['invoice','quote','statement','payslip','sla','nda','popia','job_card','tax_cover','receipt','delivery'],
+      document_types_enabled: ['invoice','quote','statement','payslip','sla','nda','popia','job_card','tax_cover','receipt','delivery','credit_note','proforma','purchase_order'],
       oauth_enabled: true,
       update_channel: 'stable',
-      announcement: 'Lab v5.0 — professional document suite & live config.',
+      announcement: 'Lab v5.1 Pro Studio — live config, document suite & secrets portal.',
     },
     secrets: {
       status_api_token: '', payfast_merchant_id: '', payfast_merchant_key: '', payfast_passphrase: '',
@@ -54,7 +54,7 @@ function createConfigStore(DATA_DIR, loadJson, saveJson) {
   }
 
   function getPublic() {
-    return { ok: true, config: { ...cfg.public }, version: cfg.public.app_version || '5.0.0', updated_at: cfg.updated_at };
+    return { ok: true, config: { ...cfg.public }, version: cfg.public.app_version || '5.1.0', updated_at: cfg.updated_at };
   }
 
   function getAdminView() {
