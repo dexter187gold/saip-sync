@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro - Sync Server v4.3.0
+ * SA Invoice Pro - Sync Server v5.1.0
  * World Domination Mega Pack · Pinky & the Brain Edition
  * Real-time wa_clients store · full brain-engine · registration that sticks
  */
@@ -20,6 +20,8 @@ const { mountQuartersLate } = require('./quarters-late');
 const { mountFlows } = require('./flows');
 const { createBrainEngine } = require('./brain-engine');
 const { mountAdmin } = require('./admin');
+const { createConfigStore } = require('./config-store');
+const { mountConfigApi } = require('./config-api');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
@@ -374,9 +376,9 @@ app.get('/api/wa/lookup', statusAuth, (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
-    version: '4.3.0',
-    codename: 'World Domination Mega Pack · Pinky & the Brain',
-    features: ['admin_portal_v4.3', 'brain_engine_v4.3', 'realtime_wa_clients', 'multi_step_flows', 'online_forms', 'q1_q10', 'client_portal'],
+    version: '5.1.0',
+    codename: 'Pro Studio · Pinky & the Brain',
+    features: ['admin_portal_v5.1', 'live_config', 'secrets_portal', 'brain_engine_v4.3', 'realtime_wa_clients', 'multi_step_flows', 'online_forms', 'q1_q10', 'client_portal'],
     ar: PUBLIC_BASE + '/api/ar',
     admin: PUBLIC_BASE + '/admin',
     forms: { register: PUBLIC_BASE + '/forms/register', job: PUBLIC_BASE + '/forms/job' },
@@ -385,7 +387,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({
-  ok: true, ts: now(), version: '4.3.0', wa_clients: Object.keys(waClients).length, theme: 'pinky-and-the-brain',
+  ok: true, ts: now(), version: '5.1.0', wa_clients: Object.keys(waClients).length, theme: 'pinky-and-the-brain',
 }));
 
 mountPortal(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now });
@@ -396,8 +398,34 @@ mountWaFlow(app, { DATA_DIR, loadJson, saveJson, sessions, persistSessions, waCl
 mountArBrain(app, { createBrainEngine, waClients, persistWaClients, ticketsIntake, persistTickets, sessions, persistSessions, invoiceStatus, statusAuth, now, pushNotification, PUBLIC_BASE, normalizePhone, reloadWaClientsFromDisk });
 mountAdmin(app, { users, persistUsers, workspaces, persistWorkspaces, waClients, persistWaClients, ticketsIntake, persistTickets, invoiceStatus, notifications, auth, now, JWT_SECRET, ADMIN_EMAIL, PUBLIC_BASE, loadJson, saveJson, DATA_DIR, path, pushNotification, persistNotifs });
 
+// Live config for web + APK (Pro Studio)
+try {
+  const configStore = createConfigStore(DATA_DIR, loadJson, saveJson);
+  function configAdminAuth(req, res, next) {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'Missing token' });
+    try {
+      const payload = jwt.verify(token, JWT_SECRET);
+      const user = Object.values(users).find((u) => u.id === payload.id);
+      const adminEmail = String(ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+      const isAdmin = user && (user.role === 'admin' || (adminEmail && String(user.email || '').toLowerCase() === adminEmail));
+      if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
+      req.user = payload;
+      req.adminUser = user;
+      next();
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+  }
+  mountConfigApi(app, { configStore, adminAuth: configAdminAuth });
+  console.log('[config] live /api/config/app mounted');
+} catch (e) {
+  console.error('[config] mount failed', e.message);
+}
+
 app.listen(PORT, () => {
-  console.log('SAIP Sync v4.3.0 World Domination Mega Pack on port ' + PORT);
+  console.log('SAIP Sync v5.1.0 Pro Studio on port ' + PORT);
   console.log('Brain engine loaded. WA clients in memory: ' + Object.keys(waClients).length);
   console.log('Narf! The same thing we do every night - try to take over the world.');
 });
