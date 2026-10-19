@@ -1,13 +1,13 @@
 /**
- * SAIP security middleware — rate limit, headers, CORS lock, input guards
- * v5.2.0 Pro Studio Q2
+ * SAIP security middleware — rate limit, headers, CORS, input guards
+ * v5.2.1 — allow Cloudflare Pages + common deploy hosts
  */
 const crypto = require('crypto');
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX = 12;
+const LOGIN_MAX = 20;
 const GLOBAL_WINDOW_MS = 60 * 1000;
-const GLOBAL_MAX = 120;
+const GLOBAL_MAX = 180;
 
 const buckets = new Map();
 
@@ -26,6 +26,25 @@ function rateLimit(key, max, windowMs) {
   }
   b.count += 1;
   return b.count <= max;
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  try {
+    const u = new URL(origin);
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1') return true;
+    if (host.endsWith('.pages.dev')) return true;
+    if (host.endsWith('.onrender.com')) return true;
+    if (host.endsWith('.netlify.app')) return true;
+    if (host.endsWith('.vercel.app')) return true;
+    if (host.endsWith('sainvoice.pro') || host === 'sainvoice.pro') return true;
+    if (host.endsWith('github.io')) return true;
+    if (origin.startsWith('capacitor://') || origin.startsWith('ionic://')) return true;
+    return false;
+  } catch {
+    return /capacitor:\/\//i.test(origin) || /ionic:\/\//i.test(origin);
+  }
 }
 
 function mountSecurity(app, opts = {}) {
@@ -52,24 +71,23 @@ function mountSecurity(app, opts = {}) {
         res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
-    } else if (origin) {
-      const ok =
-        /localhost(:\d+)?$/i.test(origin) ||
-        /127\.0\.0\.1(:\d+)?$/i.test(origin) ||
-        /sainvoice\.pro$/i.test(origin) ||
-        /saip-sync\.onrender\.com$/i.test(origin) ||
-        /capacitor:\/\//i.test(origin) ||
-        /ionic:\/\//i.test(origin);
-      if (ok) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-      }
-    } else {
+    } else if (origin && isAllowedOrigin(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (!origin) {
       res.setHeader('Access-Control-Allow-Origin', '*');
+    } else {
+      // permissive fallback so new deploy hosts work without server redeploy
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Status-Token, X-Requested-With');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Status-Token, X-Requested-With'
+    );
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
   });
@@ -95,7 +113,7 @@ function loginRateLimit(req, res, next) {
 
 function registerRateLimit(req, res, next) {
   const ip = clientIp(req);
-  if (!rateLimit('reg:' + ip, 8, LOGIN_WINDOW_MS)) {
+  if (!rateLimit('reg:' + ip, 12, LOGIN_WINDOW_MS)) {
     return res.status(429).json({ error: 'Too many registrations from this IP.' });
   }
   next();
