@@ -95,9 +95,16 @@ let workspaces = {}
 let passwordResets = {}
 
 function reloadFromDisk() {
-  users = loadJson(USERS_FILE, {})
-  workspaces = loadJson(WORKSPACES_FILE, {})
-  passwordResets = loadJson(RESET_FILE, {})
+  // Mutate in place so optional modules (admin) keep a live reference
+  const u = loadJson(USERS_FILE, {})
+  const w = loadJson(WORKSPACES_FILE, {})
+  const r = loadJson(RESET_FILE, {})
+  for (const k of Object.keys(users)) delete users[k]
+  Object.assign(users, u)
+  for (const k of Object.keys(workspaces)) delete workspaces[k]
+  Object.assign(workspaces, w)
+  for (const k of Object.keys(passwordResets)) delete passwordResets[k]
+  Object.assign(passwordResets, r)
 }
 
 function persistUsers() {
@@ -117,27 +124,38 @@ function now() {
 }
 
 function seedAdmin() {
-  const key = (process.env.ADMIN_EMAIL || 'admin@sainvoice.pro').toLowerCase().trim()
-  if (!users[key]) {
-    const id = uuidv4()
-    users[key] = {
-      id,
-      email: key,
-      password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10),
-      name: 'Lab Director',
-      role: 'admin',
-      created_at: now(),
-      updated_at: now(),
+  const defaults = ['admin@sainvoice.pro']
+  const envEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
+  if (envEmail && !defaults.includes(envEmail)) defaults.push(envEmail)
+  for (const key of defaults) {
+    if (!users[key]) {
+      const id = uuidv4()
+      users[key] = {
+        id,
+        email: key,
+        password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10),
+        name: 'Lab Director',
+        role: 'admin',
+        created_at: now(),
+        updated_at: now(),
+      }
+      workspaces[id] = {
+        data: { clients: [], invoices: [], tickets: [], settings: {} },
+        version: 1,
+        updated_at: now(),
+      }
+      console.log('[admin] seeded', key)
+    } else {
+      // Ensure role stays admin for lab accounts
+      if (users[key].role !== 'admin') {
+        users[key].role = 'admin'
+        users[key].updated_at = now()
+        console.log('[admin] promoted', key)
+      }
     }
-    workspaces[id] = {
-      data: { clients: [], invoices: [], tickets: [], settings: {} },
-      version: 1,
-      updated_at: now(),
-    }
-    persistUsers()
-    persistWorkspaces()
-    console.log('[admin] seeded', key)
   }
+  persistUsers()
+  persistWorkspaces()
 }
 
 mountSecurity(app, {})
