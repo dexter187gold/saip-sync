@@ -1,7 +1,7 @@
 {
   "name": "saip-sync",
-  "version": "5.2.1",
-  "description": "SA Invoice Pro cloud sync + recovery codes + workspace profiles",
+  "version": "5.8.0",
+  "description": "SA Invoice Pro cloud sync + recovery codes + workspace profiles + git-durable store",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

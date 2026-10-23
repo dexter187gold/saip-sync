@@ -1,52 +1,60 @@
-# SA Invoice Pro – Sync Server v4.3.0
+# SAIP Sync — Git-durable cloud backend
 
-**Pinky & the Brain Lab** · cloud sync · WhatsApp brain-engine · realtime `wa_clients` · admin portal
+Express server for **SA Invoice Pro** auth + workspace snapshots.
 
-> “The same thing we do every night, Pinky — try to take over the world!”
+## Why Git?
 
-## Admin portal
+Render free tier **wipes the local disk** on every restart/redeploy.  
+This server keeps `data/*.json` in a **private GitHub repo** so:
 
-Open: `https://YOUR-HOST/admin`
+1. **On boot** → `git pull` restores users + workspaces  
+2. **On every save** → debounced `git commit` + `git push`  
+3. **App every 5 min** → push/pull workspace via API (normal path)
 
-| Field | Default |
-|-------|---------|
-| **Email** | `admin@sainvoice.pro` |
-| **Password** | `Admin@SAIP2026!` |
+```
+App (IndexedDB)  ←→  saip-sync (Render)  ←→  private Git repo
+     ↑ 5 min                 ↑ boot pull / save push
+```
 
-Case-sensitive. Override with `ADMIN_EMAIL` / `ADMIN_PASSWORD` on Render.
+## Render setup
 
-## v4.3 highlights
+1. Create a **private** repo e.g. `saip-sync-data` (empty is fine).
+2. Create a GitHub **fine-grained PAT** with Contents Read+Write on that repo only.
+3. Deploy this folder to Render (Web Service, Node).
+4. Set env vars:
 
-- Full **Brain Control Lab** admin UI (dashboard, WA, tickets, invoices, outbox, users, tools)
-- Login cold-start wake + clearer errors
-- Force-register, outbox queue, phone lookup
-- Real-time `wa_clients.json` for registration that sticks
-- Job status API for AutoResponder messages
+| Variable | Example |
+|----------|---------|
+| `JWT_SECRET` | long random string |
+| `GIT_DATA_ENABLED` | `true` |
+| `GIT_DATA_REPO` | `https://github.com/YOU/saip-sync-data.git` |
+| `GIT_DATA_TOKEN` | `github_pat_…` |
+| `GIT_DATA_BRANCH` | `main` |
+| `ADMIN_EMAIL` | your login email |
 
-## Quick start
+5. Redeploy. Check `/health` — `git.enabled` should be `true`.
+
+## Local
 
 ```bash
 cp .env.example .env
+# fill GIT_* and JWT_SECRET
 npm install
 npm start
 ```
 
-## Deploy (Render)
+## API (used by the SPA)
 
-```
-JWT_SECRET=long-random-secret
-STATUS_API_TOKEN=your-autoresponder-token
-ADMIN_EMAIL=admin@sainvoice.pro
-ADMIN_PASSWORD=Admin@SAIP2026!
-PUBLIC_BASE_URL=https://your-service.onrender.com
-```
+- `POST /api/auth/register` `{ email, password, name }`
+- `POST /api/auth/login` `{ email, password }`
+- `POST /api/auth/forgot-password` `{ email }` → `{ recovery_code }`
+- `POST /api/auth/reset-password` `{ email, code, password }`
+- `GET  /api/workspace` (Bearer) — pull snapshot
+- `PUT  /api/workspace` (Bearer) `{ data }` — push snapshot
+- `GET  /health` — version + git status
 
-Attach a **persistent disk** to `/opt/render/project/src/data` so WA clients survive redeploys.
+## Security
 
-## API
-
-- `POST /api/auth/login` · `GET /admin`
-- `POST /api/ar` — AutoResponder brain
-- `GET /api/wa/pending` · `POST /api/tickets/status`
-- `GET /api/wa/lookup?phone=&token=`
-- `GET /health`
+- Keep `saip-sync-data` **private** — it holds bcrypt password hashes and business data.
+- Rotate the PAT if leaked.
+- Do not commit `.env` or real tokens.
