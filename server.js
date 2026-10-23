@@ -1,5 +1,6 @@
 /**
- * SA Invoice Pro Sync — auth + workspace + git-durable store v5.8.0
+ * SA Invoice Pro Sync — customer-ready v5.9.0
+ * Auth + workspace + git-durable store.
  */
 require('dotenv').config()
 const express = require('express')
@@ -50,7 +51,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com'
 const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
-const VERSION = '5.8.0'
+const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
+const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
+const VERSION = '5.9.0'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -126,7 +129,7 @@ function seedAdmin() {
         id,
         email: key,
         password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10),
-        name: 'Lab Director',
+        name: 'Administrator',
         role: 'admin',
         created_at: now(),
         updated_at: now(),
@@ -188,9 +191,10 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const user = users[key]
   const ok = user && bcrypt.compareSync(password, user.password_hash)
   if (!ok) {
-    const wipedHint = Object.keys(users).length === 0
-      ? ' (server may have restarted with empty storage — create account again, then Sync Now from your original device)'
-      : ''
+    const wipedHint =
+      Object.keys(users).length === 0
+        ? ' (server may have restarted with empty storage — create account again, then Sync Now from your original device)'
+        : ''
     return res.status(401).json({ error: 'Invalid email or password' + wipedHint })
   }
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
@@ -275,9 +279,11 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: 'Git-durable sync · 5-min interval',
-    features: ['cloud_auth', 'recovery_codes', 'workspace_sync', 'git_durable'],
+    codename: 'Customer-ready · git-durable',
+    features: ['cloud_auth', 'recovery_codes', 'workspace_sync', 'git_durable', 'admin_console'],
     admin: PUBLIC_BASE + '/admin',
+    health: PUBLIC_BASE + '/health',
+    ready: PUBLIC_BASE + '/ready',
     git: { enabled: GIT_ENABLED },
   })
 })
@@ -290,12 +296,17 @@ app.get('/admin-app.js', (_req, res) => {
   }
 })
 
-app.get('/health', (_req, res) =>
+app.get('/health', (_req, res) => {
+  const warnings = []
+  if (USING_DEFAULT_JWT) warnings.push('Set JWT_SECRET in environment')
+  if (USING_DEFAULT_ADMIN_PASSWORD) warnings.push('Set ADMIN_PASSWORD in environment')
+  if (GIT_ENABLED && gitMeta.lastError) warnings.push('Git: ' + String(gitMeta.lastError).slice(0, 120))
+  if (GIT_ENABLED && !gitMeta.lastPushAt && gitMeta.pushes === 0) warnings.push('Git has not pushed yet — save data once to seed repo')
   res.json({
     ok: true,
+    ready: GIT_ENABLED ? !gitMeta.lastError : true,
     ts: now(),
     version: VERSION,
-    theme: 'pinky-and-the-brain',
     git: {
       enabled: gitMeta.enabled,
       lastPullAt: gitMeta.lastPullAt,
@@ -306,8 +317,35 @@ app.get('/health', (_req, res) =>
       error: gitMeta.lastError,
     },
     users: Object.keys(users).length,
+    warnings,
   })
-)
+})
+
+app.get('/ready', (_req, res) => {
+  const gitOk = !GIT_ENABLED || !gitMeta.lastError
+  const body = {
+    ok: gitOk,
+    version: VERSION,
+    git: GIT_ENABLED,
+    users: Object.keys(users).length,
+    lastPushAt: gitMeta.lastPushAt,
+    lastPullAt: gitMeta.lastPullAt,
+  }
+  res.status(gitOk ? 200 : 503).json(body)
+})
+
+app.post('/api/admin/git-flush', (req, res) => {
+  const header = req.headers.authorization || ''
+  if (!header.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing token' })
+  try {
+    jwt.verify(header.slice(7), JWT_SECRET)
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+  git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r, meta: { ...gitMeta } })).catch((e) => {
+    res.status(500).json({ error: e.message })
+  })
+})
 
 for (const name of ['./portal', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
@@ -332,10 +370,15 @@ for (const name of ['./portal', './admin', './wa-flow', './ar-brain', './quarter
 
 async function boot() {
   console.log(`[saip-sync] v${VERSION} starting…`)
+  if (USING_DEFAULT_JWT) console.warn('[security] JWT_SECRET is default — set a strong secret in production')
+  if (USING_DEFAULT_ADMIN_PASSWORD) console.warn('[security] ADMIN_PASSWORD is default — change before customer use')
   await git.initOrPull()
   reloadFromDisk()
   seedAdmin()
   git.startInterval(10 * 60 * 1000)
+  setTimeout(() => {
+    git.flushPush('boot-seed').catch(() => {})
+  }, 8000)
   app.listen(PORT, () => {
     console.log(`SAIP Sync v${VERSION} on port ${PORT} · git=${GIT_ENABLED ? 'on' : 'off'} · users=${Object.keys(users).length}`)
   })
