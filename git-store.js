@@ -20,7 +20,9 @@ const GIT_ENABLED =
   !!(process.env.GIT_DATA_REPO && process.env.GIT_DATA_TOKEN)
 const GIT_REPO = process.env.GIT_DATA_REPO || ''
 const GIT_BRANCH = process.env.GIT_DATA_BRANCH || 'main'
-const GIT_TOKEN = process.env.GIT_DATA_TOKEN || ''
+const GIT_TOKEN = String(process.env.GIT_DATA_TOKEN || '')
+  .trim()
+  .replace(/^['"]|['"]$/g, '')
 const GIT_USER = process.env.GIT_DATA_USER || 'saip-sync-bot'
 const GIT_EMAIL = process.env.GIT_DATA_EMAIL || 'saip-sync@users.noreply.github.com'
 const GIT_PUSH_DEBOUNCE_MS = Number(process.env.GIT_PUSH_DEBOUNCE_MS) || 15000
@@ -37,13 +39,16 @@ const meta = {
 
 function authedGitUrl(repoUrl) {
   if (!GIT_TOKEN || !repoUrl) return repoUrl
+  // Fine-grained + classic PATs: https://x-access-token:TOKEN@github.com/...
+  const encoded = encodeURIComponent(GIT_TOKEN)
   try {
-    const u = new URL(repoUrl)
+    const u = new URL(repoUrl.replace(/\.git$/, '') + '.git')
     u.username = 'x-access-token'
     u.password = GIT_TOKEN
     return u.toString()
   } catch {
-    return repoUrl.replace('https://', `https://x-access-token:${GIT_TOKEN}@`)
+    const bare = String(repoUrl).replace(/^https?:\/\//, '').replace(/\.git$/, '')
+    return `https://x-access-token:${encoded}@${bare}.git`
   }
 }
 
