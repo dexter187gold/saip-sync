@@ -375,6 +375,8 @@ for (const name of [
           now,
           users,
           persistUsers,
+          persistWorkspaces,
+          persistResets,
         })
         console.log('[optional]', name)
       } catch (e) {
