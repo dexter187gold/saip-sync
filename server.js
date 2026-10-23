@@ -1,12 +1,5 @@
 /**
  * SA Invoice Pro Sync — auth + workspace + git-durable store v5.8.0
- * Compatible with SPA client (PUT /api/workspace { data }, recovery codes).
- *
- * Render free tier wipes disk on restart. When GIT_DATA_REPO + GIT_DATA_TOKEN
- * are set, data/*.json is pulled on boot and pushed after every save.
- *
- *   App ──5 min──► this server ──debounce──► private GitHub data repo
- *   Server boot ──git pull──► data restored
  */
 require('dotenv').config()
 const express = require('express')
@@ -95,7 +88,6 @@ let workspaces = {}
 let passwordResets = {}
 
 function reloadFromDisk() {
-  // Mutate in place so optional modules (admin) keep a live reference
   const u = loadJson(USERS_FILE, {})
   const w = loadJson(WORKSPACES_FILE, {})
   const r = loadJson(RESET_FILE, {})
@@ -145,13 +137,10 @@ function seedAdmin() {
         updated_at: now(),
       }
       console.log('[admin] seeded', key)
-    } else {
-      // Ensure role stays admin for lab accounts
-      if (users[key].role !== 'admin') {
-        users[key].role = 'admin'
-        users[key].updated_at = now()
-        console.log('[admin] promoted', key)
-      }
+    } else if (users[key].role !== 'admin') {
+      users[key].role = 'admin'
+      users[key].updated_at = now()
+      console.log('[admin] promoted', key)
     }
   }
   persistUsers()
@@ -184,20 +173,8 @@ app.post('/api/auth/register', registerRateLimit, (req, res) => {
   const id = uuidv4()
   const hash = bcrypt.hashSync(password, 10)
   const ts = now()
-  users[key] = {
-    id,
-    email: key,
-    password_hash: hash,
-    name: name || null,
-    role: 'user',
-    created_at: ts,
-    updated_at: ts,
-  }
-  workspaces[id] = {
-    data: { clients: [], invoices: [], tickets: [], settings: {} },
-    version: 1,
-    updated_at: ts,
-  }
+  users[key] = { id, email: key, password_hash: hash, name: name || null, role: 'user', created_at: ts, updated_at: ts }
+  workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: ts }
   persistUsers()
   persistWorkspaces()
   const token = jwt.sign({ id, email: key }, JWT_SECRET, { expiresIn: '90d' })
@@ -211,10 +188,9 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const user = users[key]
   const ok = user && bcrypt.compareSync(password, user.password_hash)
   if (!ok) {
-    const wipedHint =
-      Object.keys(users).length === 0
-        ? ' (server may have restarted with empty storage — create account again, then Sync Now from your original device)'
-        : ''
+    const wipedHint = Object.keys(users).length === 0
+      ? ' (server may have restarted with empty storage — create account again, then Sync Now from your original device)'
+      : ''
     return res.status(401).json({ error: 'Invalid email or password' + wipedHint })
   }
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
@@ -224,10 +200,7 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
 app.get('/api/auth/me', auth, (req, res) => {
   const user = Object.values(users).find((u) => u.id === req.user.id)
   if (!user) return res.status(404).json({ error: 'User not found' })
-  res.json({
-    ok: true,
-    user: { id: user.id, email: user.email, name: user.name, created_at: user.created_at },
-  })
+  res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, created_at: user.created_at } })
 })
 
 app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
@@ -235,32 +208,16 @@ app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email required' })
   const user = users[email]
   if (!user) {
-    return res.json({
-      ok: true,
-      message: 'If that email is registered, a recovery code was issued.',
-      expires_in_hours: RESET_TOKEN_HOURS,
-    })
+    return res.json({ ok: true, message: 'If that email is registered, a recovery code was issued.', expires_in_hours: RESET_TOKEN_HOURS })
   }
   const token = crypto.randomBytes(32).toString('hex')
   const recovery_code = String(crypto.randomInt(100000, 999999))
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString()
   passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code }
-  passwordResets['code:' + email + ':' + recovery_code] = {
-    email,
-    expires,
-    used: false,
-    created_at: now(),
-    token,
-    recovery_code,
-  }
+  passwordResets['code:' + email + ':' + recovery_code] = { email, expires, used: false, created_at: now(), token, recovery_code }
   persistResets()
   console.log('[auth] recovery code for', email, recovery_code)
-  res.json({
-    ok: true,
-    message: 'Recovery code created. Enter it with your new password in the app.',
-    recovery_code,
-    expires_in_hours: RESET_TOKEN_HOURS,
-  })
+  res.json({ ok: true, message: 'Recovery code created. Enter it with your new password in the app.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
 })
 
 app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
@@ -275,8 +232,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   if (token && passwordResets[token]) rec = passwordResets[token]
   else if (emailKey && recovery_code) rec = passwordResets['code:' + emailKey + ':' + recovery_code]
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used recovery code' })
-  if (new Date(rec.expires) < new Date())
-    return res.status(400).json({ error: 'Recovery code has expired — request a new one' })
+  if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Recovery code has expired — request a new one' })
   const user = users[rec.email]
   if (!user) return res.status(400).json({ error: 'User no longer exists' })
   user.password_hash = bcrypt.hashSync(password, 10)
@@ -290,12 +246,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   persistUsers()
   persistResets()
   const jwtToken = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
-  res.json({
-    ok: true,
-    message: 'Password updated — you are signed in',
-    token: jwtToken,
-    user: { id: user.id, email: user.email, name: user.name },
-  })
+  res.json({ ok: true, message: 'Password updated — you are signed in', token: jwtToken, user: { id: user.id, email: user.email, name: user.name } })
 })
 
 app.get('/api/workspace', auth, (req, res) => {
@@ -315,21 +266,10 @@ app.put('/api/workspace', auth, (req, res) => {
   res.json({ ok: true, version: newVersion, updated_at: ts })
 })
 
-app.get('/api/workspace/history', auth, (req, res) => {
-  res.json({ ok: true, history: [] })
-})
-
-app.post('/api/status/push', auth, (req, res) => {
-  res.json({ ok: true, count: 0 })
-})
-
-app.get('/api/notifications', auth, (req, res) => {
-  res.json({ ok: true, count: 0, unread: 0, notifications: [] })
-})
-
-app.get('/api/wa/pending', auth, (req, res) => {
-  res.json({ ok: true, count: 0, clients: [] })
-})
+app.get('/api/workspace/history', auth, (req, res) => res.json({ ok: true, history: [] }))
+app.post('/api/status/push', auth, (req, res) => res.json({ ok: true, count: 0 }))
+app.get('/api/notifications', auth, (req, res) => res.json({ ok: true, count: 0, unread: 0, notifications: [] }))
+app.get('/api/wa/pending', auth, (req, res) => res.json({ ok: true, count: 0, clients: [] }))
 
 app.get('/', (req, res) => {
   res.json({
@@ -340,6 +280,14 @@ app.get('/', (req, res) => {
     admin: PUBLIC_BASE + '/admin',
     git: { enabled: GIT_ENABLED },
   })
+})
+
+app.get('/admin-app.js', (_req, res) => {
+  try {
+    res.type('application/javascript').send(fs.readFileSync(path.join(__dirname, 'admin-app.js'), 'utf8'))
+  } catch (e) {
+    res.status(404).type('text').send('// admin-app.js missing')
+  }
 })
 
 app.get('/health', (_req, res) =>
@@ -361,41 +309,17 @@ app.get('/health', (_req, res) =>
   })
 )
 
-for (const name of [
-  './portal',
-  './admin',
-  './wa-flow',
-  './ar-brain',
-  './quarters',
-  './quarters-late',
-  './flows',
-]) {
+for (const name of ['./portal', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
     const mod = require(name)
     const fn =
-      mod.mountPortal ||
-      mod.mountAdmin ||
-      mod.mountWaFlow ||
-      mod.mountArBrain ||
-      mod.mountQuarters ||
-      mod.mountQuartersLate ||
-      mod.mountFlows ||
-      mod.mount
+      mod.mountPortal || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain ||
+      mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
     if (typeof fn === 'function') {
       try {
         fn(app, {
-          DATA_DIR,
-          loadJson,
-          saveJson,
-          workspaces,
-          auth,
-          PUBLIC_BASE,
-          now,
-          users,
-          persistUsers,
-          persistWorkspaces,
-          persistResets,
-          JWT_SECRET,
+          DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users,
+          persistUsers, persistWorkspaces, persistResets, JWT_SECRET,
           ADMIN_EMAIL: process.env.ADMIN_EMAIL || '',
         })
         console.log('[optional]', name)
@@ -413,9 +337,7 @@ async function boot() {
   seedAdmin()
   git.startInterval(10 * 60 * 1000)
   app.listen(PORT, () => {
-    console.log(
-      `SAIP Sync v${VERSION} on port ${PORT} · git=${GIT_ENABLED ? 'on' : 'off'} · users=${Object.keys(users).length}`
-    )
+    console.log(`SAIP Sync v${VERSION} on port ${PORT} · git=${GIT_ENABLED ? 'on' : 'off'} · users=${Object.keys(users).length}`)
   })
 }
 
