@@ -377,6 +377,8 @@ for (const name of [
           persistUsers,
           persistWorkspaces,
           persistResets,
+          JWT_SECRET,
+          ADMIN_EMAIL: process.env.ADMIN_EMAIL || '',
         })
         console.log('[optional]', name)
       } catch (e) {
