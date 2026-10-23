@@ -7,7 +7,7 @@
  *   GIT_DATA_REPO=https://github.com/YOU/saip-sync-data.git
  *   GIT_DATA_TOKEN=github_pat_...
  *   GIT_DATA_BRANCH=main
- *   GIT_PUSH_DEBOUNCE_MS=15000
+ *   GIT_PUSH_DEBOUNCE_MS=5000
  */
 const path = require('path')
 const fs = require('fs')
@@ -25,7 +25,7 @@ const GIT_TOKEN = String(process.env.GIT_DATA_TOKEN || '')
   .replace(/^['"]|['"]$/g, '')
 const GIT_USER = process.env.GIT_DATA_USER || 'saip-sync-bot'
 const GIT_EMAIL = process.env.GIT_DATA_EMAIL || 'saip-sync@users.noreply.github.com'
-const GIT_PUSH_DEBOUNCE_MS = Number(process.env.GIT_PUSH_DEBOUNCE_MS) || 15000
+const GIT_PUSH_DEBOUNCE_MS = Number(process.env.GIT_PUSH_DEBOUNCE_MS) || 5000
 
 const meta = {
   enabled: GIT_ENABLED,
@@ -39,8 +39,6 @@ const meta = {
 
 function authedGitUrl(repoUrl) {
   if (!GIT_TOKEN || !repoUrl) return repoUrl
-  // Fine-grained + classic PATs: https://x-access-token:TOKEN@github.com/...
-  const encoded = encodeURIComponent(GIT_TOKEN)
   try {
     const u = new URL(repoUrl.replace(/\.git$/, '') + '.git')
     u.username = 'x-access-token'
@@ -48,14 +46,27 @@ function authedGitUrl(repoUrl) {
     return u.toString()
   } catch {
     const bare = String(repoUrl).replace(/^https?:\/\//, '').replace(/\.git$/, '')
-    return `https://x-access-token:${encoded}@${bare}.git`
+    return `https://x-access-token:${encodeURIComponent(GIT_TOKEN)}@${bare}.git`
+  }
+}
+
+function ensureDataFiles(DATA_DIR) {
+  for (const name of ['users.json', 'workspaces.json', 'password_resets.json']) {
+    const f = path.join(DATA_DIR, name)
+    if (!fs.existsSync(f)) {
+      try {
+        fs.writeFileSync(f, '{}\n', 'utf8')
+      } catch {}
+    }
   }
 }
 
 function createGitStore(DATA_DIR) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
+  ensureDataFiles(DATA_DIR)
   let pushTimer = null
   let pushInFlight = false
+  let pendingReason = null
 
   function runGit(args, opts = {}) {
     return execFileAsync('git', args, {
@@ -76,29 +87,22 @@ function createGitStore(DATA_DIR) {
     try {
       if (!fs.existsSync(gitDir)) {
         const tmp = path.join(path.dirname(DATA_DIR), '.git-data-tmp')
-        try {
-          fs.rmSync(tmp, { recursive: true, force: true })
-        } catch {}
+        try { fs.rmSync(tmp, { recursive: true, force: true }) } catch {}
         console.log('[git] cloning data repo…')
         try {
           await execFileAsync(
             'git',
             ['clone', '--depth', '1', '--branch', GIT_BRANCH, remote, tmp],
-            {
-              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-              timeout: 120000,
-              maxBuffer: 20 * 1024 * 1024,
-            }
+            { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, timeout: 120000, maxBuffer: 20 * 1024 * 1024 }
           )
         } catch (e) {
           console.warn('[git] clone failed, init empty', (e.stderr || e.message || '').toString().slice(0, 200))
           await runGit(['init', '-b', GIT_BRANCH])
           await runGit(['config', 'user.name', GIT_USER])
           await runGit(['config', 'user.email', GIT_EMAIL])
-          try {
-            await runGit(['remote', 'add', 'origin', remote])
-          } catch {}
+          try { await runGit(['remote', 'add', 'origin', remote]) } catch {}
           meta.lastError = 'clone failed — will push on first save'
+          ensureDataFiles(DATA_DIR)
           return { ok: false, error: 'clone_failed' }
         }
         for (const name of fs.readdirSync(tmp)) {
@@ -113,20 +117,14 @@ function createGitStore(DATA_DIR) {
           fs.rmSync(gitDir, { recursive: true, force: true })
           fs.renameSync(path.join(tmp, '.git'), gitDir)
         } catch {
-          try {
-            fs.cpSync(path.join(tmp, '.git'), gitDir, { recursive: true })
-          } catch {}
+          try { fs.cpSync(path.join(tmp, '.git'), gitDir, { recursive: true }) } catch {}
         }
-        try {
-          fs.rmSync(tmp, { recursive: true, force: true })
-        } catch {}
+        try { fs.rmSync(tmp, { recursive: true, force: true }) } catch {}
       } else {
         try {
           await runGit(['remote', 'set-url', 'origin', remote])
         } catch {
-          try {
-            await runGit(['remote', 'add', 'origin', remote])
-          } catch {}
+          try { await runGit(['remote', 'add', 'origin', remote]) } catch {}
         }
         await runGit(['fetch', 'origin', GIT_BRANCH]).catch(() => {})
         try {
@@ -139,6 +137,7 @@ function createGitStore(DATA_DIR) {
         await runGit(['config', 'user.name', GIT_USER])
         await runGit(['config', 'user.email', GIT_EMAIL])
       } catch {}
+      ensureDataFiles(DATA_DIR)
       let head = null
       try {
         head = (await runGit(['rev-parse', '--short', 'HEAD'])).stdout.trim()
@@ -159,10 +158,14 @@ function createGitStore(DATA_DIR) {
 
   async function commitAndPush(reason = 'save') {
     if (!GIT_ENABLED || !GIT_REPO) return { ok: false, reason: 'disabled' }
-    if (pushInFlight) return { ok: false, reason: 'busy' }
+    if (pushInFlight) {
+      pendingReason = reason
+      return { ok: false, reason: 'busy' }
+    }
     pushInFlight = true
     const remote = authedGitUrl(GIT_REPO)
     try {
+      ensureDataFiles(DATA_DIR)
       try {
         await runGit(['config', 'user.name', GIT_USER])
         await runGit(['config', 'user.email', GIT_EMAIL])
@@ -170,9 +173,7 @@ function createGitStore(DATA_DIR) {
       try {
         await runGit(['remote', 'set-url', 'origin', remote])
       } catch {
-        try {
-          await runGit(['remote', 'add', 'origin', remote])
-        } catch {}
+        try { await runGit(['remote', 'add', 'origin', remote]) } catch {}
       }
       await runGit(['add', 'users.json', 'workspaces.json', 'password_resets.json']).catch(() => {})
       await runGit(['add', '-A', '*.json']).catch(() => {})
@@ -211,6 +212,11 @@ function createGitStore(DATA_DIR) {
       return { ok: false, error: msg }
     } finally {
       pushInFlight = false
+      if (pendingReason) {
+        const r = pendingReason
+        pendingReason = null
+        setTimeout(() => commitAndPush(r).catch(() => {}), 500)
+      }
     }
   }
 
@@ -221,6 +227,14 @@ function createGitStore(DATA_DIR) {
       pushTimer = null
       commitAndPush(reason).catch((e) => console.error('[git] push', e.message || e))
     }, GIT_PUSH_DEBOUNCE_MS)
+  }
+
+  function flushPush(reason = 'flush') {
+    if (pushTimer) {
+      clearTimeout(pushTimer)
+      pushTimer = null
+    }
+    return commitAndPush(reason)
   }
 
   function startInterval(ms = 10 * 60 * 1000) {
@@ -236,6 +250,7 @@ function createGitStore(DATA_DIR) {
     initOrPull,
     commitAndPush,
     schedulePush,
+    flushPush,
     startInterval,
   }
 }
