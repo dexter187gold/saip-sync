@@ -2,96 +2,67 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="robots" content="noindex,nofollow"/>
+<meta name="theme-color" content="#0b1220"/>
 <title>Admin · SA Invoice Pro Sync</title>
 <style>
-:root, [data-theme="dark"] {
-  --bg: #0b1220; --bg-elevated: #111827; --surface: #151c2c; --surface-2: #1a2336;
-  --border: #243044; --text: #e8eef7; --text-secondary: #94a3b8; --muted: #64748b;
-  --primary: #3b82f6; --primary-hover: #2563eb; --primary-soft: rgba(59,130,246,.14);
-  --success: #10b981; --success-soft: rgba(16,185,129,.14);
-  --danger: #ef4444; --danger-soft: rgba(239,68,68,.14); --warning: #f59e0b;
-  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.2); --input-bg: #0f172a;
-}
-[data-theme="light"] {
-  --bg: #f1f5f9; --bg-elevated: #fff; --surface: #fff; --surface-2: #f8fafc;
-  --border: #e2e8f0; --text: #0f172a; --text-secondary: #475569; --muted: #64748b;
-  --primary: #2563eb; --primary-hover: #1d4ed8; --primary-soft: rgba(37,99,235,.1);
-  --success: #059669; --success-soft: rgba(5,150,105,.12);
-  --danger: #dc2626; --danger-soft: rgba(220,38,38,.1); --warning: #d97706;
-  --shadow: 0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06); --input-bg: #fff;
-}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%}
-body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased}
-a{color:var(--primary);text-decoration:none}a:hover{text-decoration:underline}
-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;background:var(--surface-2);border:1px solid var(--border);padding:2px 6px;border-radius:6px;color:var(--primary)}
-.login-shell{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse 70% 50% at 50% -20%,var(--primary-soft),transparent 55%),var(--bg)}
-.login-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px 28px;box-shadow:var(--shadow);position:relative}
-.login-theme{position:absolute;top:14px;right:14px}
-.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:22px}
-.mark{width:40px;height:40px;border-radius:10px;background:linear-gradient(145deg,#3b82f6,#1d4ed8);display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff}
+:root,[data-theme="dark"]{--bg:#0b1220;--bg-elevated:#111827;--surface:#151c2c;--surface-2:#1a2336;--border:#243044;--text:#e8eef7;--text-secondary:#94a3b8;--muted:#64748b;--primary:#3b82f6;--primary-hover:#2563eb;--primary-soft:rgba(59,130,246,.14);--success:#10b981;--success-soft:rgba(16,185,129,.14);--danger:#ef4444;--danger-soft:rgba(239,68,68,.14);--warning:#f59e0b;--shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.2);--input-bg:#0f172a;--safe-bottom:env(safe-area-inset-bottom,0px);--nav-h:58px}
+[data-theme="light"]{--bg:#f1f5f9;--bg-elevated:#fff;--surface:#fff;--surface-2:#f8fafc;--border:#e2e8f0;--text:#0f172a;--text-secondary:#475569;--muted:#64748b;--primary:#2563eb;--primary-hover:#1d4ed8;--primary-soft:rgba(37,99,235,.1);--success:#059669;--success-soft:rgba(5,150,105,.12);--danger:#dc2626;--danger-soft:rgba(220,38,38,.1);--warning:#d97706;--shadow:0 1px 2px rgba(15,23,42,.06);--input-bg:#fff}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+.hidden{display:none!important}
+.login-shell{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(ellipse 70% 50% at 50% -20%,var(--primary-soft),transparent 55%),var(--bg)}
+.login-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px 22px;box-shadow:var(--shadow);position:relative}
+.login-theme{position:absolute;top:12px;right:12px}.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.mark{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--primary),#8b5cf6);display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff}
 .login-logo .meta strong{display:block;font-size:15px}.login-logo .meta span{font-size:12px;color:var(--text-secondary)}
-.login-card h1{margin:0 0 6px;font-size:1.35rem;font-weight:650;letter-spacing:-.02em}
-.lede{margin:0 0 20px;color:var(--text-secondary);font-size:.9rem}
-.field{margin-bottom:14px}.field label{display:block;font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase}
-.field input,input,textarea,select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);font:inherit;font-size:.92rem}
-.field input:focus,input:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
-.login-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.err{color:#f87171;font-size:.85rem;min-height:1.2em;margin:10px 0 0}[data-theme="light"] .err{color:#dc2626}
-.hint{color:var(--muted);font-size:.8rem;margin:6px 0 0}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 13px;border-radius:8px;border:1px solid transparent;font:inherit;font-size:.85rem;font-weight:600;cursor:pointer}
-.btn:disabled{opacity:.55;cursor:not-allowed}.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover:not(:disabled){background:var(--primary-hover)}
-.btn-secondary{background:var(--surface-2);border-color:var(--border);color:var(--text)}.btn-sm{padding:6px 10px;font-size:.78rem}
-.btn-outline,.btn-ok,.btn-danger{padding:8px 12px;border-radius:8px;font:inherit;font-size:.82rem;font-weight:600;cursor:pointer}
-.btn-outline{background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
-.btn-ok{background:var(--success-soft);border:1px solid rgba(16,185,129,.35);color:var(--success)}
-.btn-danger{background:var(--danger-soft);border:1px solid rgba(239,68,68,.35);color:var(--danger)}
-.app-shell{min-height:100vh;display:grid;grid-template-columns:248px 1fr}
-@media (max-width:900px){.app-shell{grid-template-columns:1fr}.sidebar{position:sticky;top:0;z-index:30;border-right:0;border-bottom:1px solid var(--border)}.nav-tabs{flex-direction:row;overflow-x:auto}.tab{white-space:nowrap}}
-.sidebar{background:var(--bg-elevated);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:16px}
-.side-brand{display:flex;align-items:center;gap:10px;padding:6px 8px}.side-brand .mark{width:34px;height:34px;border-radius:8px;font-size:12px}
-.side-brand strong{display:block;font-size:13px}.side-brand span{font-size:11px;color:var(--muted)}
-.nav-tabs{display:flex;flex-direction:column;gap:2px}
-.tab{appearance:none;background:transparent;border:0;color:var(--text-secondary);text-align:left;padding:9px 12px;border-radius:8px;font:inherit;font-size:.86rem;font-weight:500;cursor:pointer}
+.login-card h1{margin:0 0 6px;font-size:1.3rem}.lede{margin:0 0 18px;color:var(--text-secondary);font-size:.9rem}
+.field{margin-bottom:14px}.field label{display:block;font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase}
+.field input,input,textarea,select{width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);font:inherit;font-size:16px}
+.login-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.err{color:#f87171;font-size:.85rem;min-height:1.2em;margin:10px 0 0}.hint{color:var(--muted);font-size:.8rem}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:8px;border:1px solid transparent;font:inherit;font-size:.85rem;font-weight:600;cursor:pointer;min-height:42px}
+.btn:disabled{opacity:.55}.btn-primary{background:var(--primary);color:#fff}.btn-secondary{background:var(--surface-2);border-color:var(--border);color:var(--text)}.btn-sm{padding:7px 10px;font-size:.78rem;min-height:34px}
+.btn-outline,.btn-ok,.btn-danger{padding:8px 12px;border-radius:8px;font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;min-height:36px}
+.btn-outline{background:var(--surface-2);border:1px solid var(--border);color:var(--text)}.btn-ok{background:var(--success-soft);border:1px solid rgba(16,185,129,.35);color:var(--success)}.btn-danger{background:var(--danger-soft);border:1px solid rgba(239,68,68,.35);color:var(--danger)}
+.app-shell{min-height:100vh;display:grid;grid-template-columns:240px 1fr}
+.sidebar{background:var(--bg-elevated);border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:12px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.side-brand{display:flex;align-items:center;gap:10px;padding:6px 8px}.side-brand .mark{width:34px;height:34px;border-radius:8px;font-size:12px}.side-brand strong{display:block;font-size:13px}.side-brand span{font-size:11px;color:var(--muted)}
+.nav-tabs{display:flex;flex-direction:column;gap:2px;flex:1}
+.tab{appearance:none;background:transparent;border:0;color:var(--text-secondary);text-align:left;padding:10px 12px;border-radius:8px;font:inherit;font-size:.86rem;font-weight:500;cursor:pointer}
 .tab:hover{background:var(--surface-2);color:var(--text)}.tab.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
-.side-footer{margin-top:auto;padding:10px 8px 4px;border-top:1px solid var(--border)}
-.side-footer .who{font-size:12px;color:var(--text-secondary);margin-bottom:10px;word-break:break-all}
-.side-actions{display:flex;gap:6px;flex-wrap:wrap}
-.main{padding:0;min-width:0}
-.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--bg-elevated);position:sticky;top:0;z-index:10}
-.topbar h1{margin:0;font-size:1.05rem;font-weight:650}.topbar .sub{margin:2px 0 0;color:var(--text-secondary);font-size:.8rem}
-.content{padding:20px 24px 48px;max-width:1180px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow)}
-.card h3{margin:0 0 12px;font-size:.95rem;font-weight:600}.card h4{margin:14px 0 8px;font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.hidden{display:none!important}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar input{max-width:260px;margin:0}
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-bottom:8px}
-.stat{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
-.stat .l{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-.stat .v{margin-top:4px;font-size:1.25rem;font-weight:700;letter-spacing:-.02em}.stat .s{margin-top:2px;font-size:11px;color:var(--text-secondary)}
-table{width:100%;border-collapse:collapse;font-size:.84rem}
-th,td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
-th{color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-tr:hover td{background:var(--primary-soft)}
-.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text-secondary)}
-.pill.ok{background:var(--success-soft);border-color:rgba(16,185,129,.3);color:var(--success)}
-.pill.warn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3);color:var(--warning)}
-.pill.bad{background:var(--danger-soft);border-color:rgba(239,68,68,.3);color:var(--danger)}
-#toast{position:fixed;bottom:20px;right:20px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);padding:12px 16px;border-radius:10px;display:none;z-index:100;max-width:340px;box-shadow:var(--shadow);font-size:.875rem}
-.status-line{font-size:12px;color:var(--text-secondary)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}.dot.on{background:var(--success)}.dot.off{background:var(--danger)}
+.side-footer{margin-top:auto;padding:10px 8px 4px;border-top:1px solid var(--border)}.side-footer .who{font-size:12px;color:var(--text-secondary);margin-bottom:10px;word-break:break-all}.side-actions{display:flex;gap:6px;flex-wrap:wrap}
+.main{min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--bg-elevated);position:sticky;top:0;z-index:10}
+.topbar h1{margin:0;font-size:1.05rem}.topbar .sub{margin:2px 0 0;color:var(--text-secondary);font-size:.8rem}
+.content{padding:16px 20px calc(24px + var(--nav-h) + var(--safe-bottom));max-width:1180px;width:100%}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow)}.card h3{margin:0 0 12px;font-size:.95rem}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:8px}
+.stat{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}.stat .l{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase}.stat .v{margin-top:4px;font-size:1.2rem;font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:.84rem}th,td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left}th{color:var(--muted);font-size:10px;text-transform:uppercase}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:11px;font-weight:600}.pill.ok{background:var(--success-soft);color:var(--success)}.pill.bad{background:var(--danger-soft);color:var(--danger)}
+#toast{position:fixed;bottom:calc(16px + var(--nav-h) + var(--safe-bottom));left:50%;transform:translateX(-50%);background:var(--bg-elevated);border:1px solid var(--border);padding:10px 16px;border-radius:10px;box-shadow:var(--shadow);z-index:100;display:none;max-width:90vw;font-size:.88rem}
+.git-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);padding:4px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border)}
+.git-badge .dot{width:8px;height:8px;border-radius:50%}.git-badge .dot.on{background:var(--success)}.git-badge .dot.off{background:var(--danger)}
+.m-list{display:flex;flex-direction:column;gap:8px}.m-card{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px}.m-card .t{font-weight:600;font-size:.9rem}.m-card .s{font-size:.78rem;color:var(--muted);margin-top:2px}.m-card .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.bottom-nav{display:none;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--bg-elevated);border-top:1px solid var(--border);padding:4px 4px calc(4px + var(--safe-bottom));grid-template-columns:repeat(5,1fr);gap:2px}
+.bnav{appearance:none;background:transparent;border:0;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px;font:inherit;font-size:10px;font-weight:600;cursor:pointer;border-radius:8px;min-height:48px}
+.bnav.on{color:var(--primary);background:var(--primary-soft)}.bnav .ico{font-size:16px;line-height:1}
+.drawer-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50}.drawer-backdrop.show{display:block}
+.drawer{position:fixed;left:0;right:0;bottom:0;z-index:51;background:var(--bg-elevated);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:12px 12px calc(16px + var(--safe-bottom));max-height:70vh;overflow-y:auto;transform:translateY(110%);transition:transform .2s ease}
+.drawer.open{transform:translateY(0)}.drawer h3{margin:4px 8px 12px;font-size:.95rem}.drawer .tab{width:100%}
+@media (max-width:820px){.app-shell{grid-template-columns:1fr}.sidebar{display:none}.bottom-nav{display:grid}.content{padding:12px 12px calc(18px + var(--nav-h) + var(--safe-bottom))}.topbar{padding:10px 12px}.desktop-table{display:none}.mobile-list{display:block}}
+@media (min-width:821px){.bottom-nav,.drawer,.drawer-backdrop{display:none!important}.mobile-list{display:none}.desktop-table{display:table}.content{padding:20px 24px 48px}}
 </style>
 </head>
 <body>
 <div id="login" class="login-shell">
   <div class="login-card">
-    <button type="button" class="btn btn-secondary btn-sm login-theme" id="btn-theme-login" title="Toggle theme">Theme</button>
-    <div class="login-logo"><div class="mark">SA</div><div class="meta"><strong>SA Invoice Pro</strong><span>Sync server · Admin console</span></div></div>
-    <h1>Administrator sign-in</h1>
-    <p class="lede">Manage users, intake, WhatsApp, invoices, and system health.</p>
-    <div class="field"><label for="email">Email</label><input id="email" type="email" value="admin@sainvoice.pro" autocomplete="username"/></div>
-    <div class="field"><label for="password">Password</label><input id="password" type="password" placeholder="Admin password" autocomplete="current-password"/></div>
+    <button type="button" class="btn btn-secondary btn-sm login-theme" id="btn-theme-login">Light mode</button>
+    <div class="login-logo"><div class="mark">SA</div><div class="meta"><strong>SA Invoice Pro</strong><span>Admin Console</span></div></div>
+    <h1>Sign in</h1>
+    <p class="lede">Manage users, workspaces, invoices and system health.</p>
+    <div class="field"><label for="email">Email</label><input id="email" type="email" value="admin@sainvoice.pro" autocomplete="username" inputmode="email"/></div>
+    <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password"/></div>
     <div class="login-actions">
       <button type="button" class="btn btn-primary" id="btn-login">Sign in</button>
       <button type="button" class="btn btn-secondary" id="btn-fill">Use default</button>
@@ -102,46 +73,66 @@ tr:hover td{background:var(--primary-soft)}
 </div>
 <div id="app" class="app-shell hidden">
   <aside class="sidebar">
-    <div class="side-brand"><div class="mark">SA</div><div><strong>Admin Console</strong><span>v5.8 · Cloud sync</span></div></div>
-    <nav class="nav-tabs tabs">
+    <div class="side-brand"><div class="mark">SA</div><div><strong>Admin Console</strong><span>v6.0 · Cloud sync</span></div></div>
+    <nav class="nav-tabs" id="side-nav">
       <button type="button" class="tab on" data-tab="dash">Dashboard</button>
       <button type="button" class="tab" data-tab="users">Users</button>
-      <button type="button" class="tab" data-tab="wa">WA Clients</button>
-      <button type="button" class="tab" data-tab="tickets">Tickets</button>
       <button type="button" class="tab" data-tab="invoices">Invoices</button>
-      <button type="button" class="tab" data-tab="outbox">Outbox</button>
+      <button type="button" class="tab" data-tab="tickets">Tickets</button>
+      <button type="button" class="tab" data-tab="clients">Clients</button>
       <button type="button" class="tab" data-tab="system">System</button>
-      <button type="button" class="tab" data-tab="secrets">Configuration</button>
+      <button type="button" class="tab" data-tab="secrets">Config</button>
       <button type="button" class="tab" data-tab="tools">Tools</button>
     </nav>
     <div class="side-footer">
-      <div class="who" id="who"></div>
+      <div class="who" id="who">—</div>
       <div class="side-actions">
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-theme">Theme</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-logout">Sign out</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-theme">Light mode</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh">Refresh</button>
+        <button type="button" class="btn btn-danger btn-sm" id="btn-logout">Log out</button>
       </div>
     </div>
   </aside>
   <div class="main">
     <header class="topbar">
-      <div><h1 id="page-title">Dashboard</h1><p class="sub" id="page-sub">Overview of sync server activity</p></div>
-      <div class="row">
-        <span class="status-line" id="git-badge"><span class="dot off"></span>Git …</span>
-        <a class="btn btn-secondary btn-sm" href="/health" target="_blank" rel="noopener">Health API</a>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh">Refresh</button>
-      </div>
+      <div><h1 id="page-title">Dashboard</h1><p class="sub" id="page-sub">Overview</p></div>
+      <span class="git-badge" id="git-badge"><span class="dot off"></span>Git …</span>
     </header>
     <div class="content">
-      <div id="panel-dash" class="card"></div>
-      <div id="panel-users" class="card hidden"></div>
-      <div id="panel-wa" class="card hidden"></div>
-      <div id="panel-tickets" class="card hidden"></div>
-      <div id="panel-invoices" class="card hidden"></div>
-      <div id="panel-outbox" class="card hidden"></div>
-      <div id="panel-system" class="card hidden"></div>
-      <div id="panel-secrets" class="card hidden"></div>
-      <div id="panel-tools" class="card hidden"></div>
+      <div id="panel-dash"></div>
+      <div id="panel-users" class="hidden"></div>
+      <div id="panel-invoices" class="hidden"></div>
+      <div id="panel-tickets" class="hidden"></div>
+      <div id="panel-clients" class="hidden"></div>
+      <div id="panel-system" class="hidden"></div>
+      <div id="panel-secrets" class="hidden"></div>
+      <div id="panel-tools" class="hidden"></div>
+      <div id="panel-wa" class="hidden"></div>
+      <div id="panel-outbox" class="hidden"></div>
     </div>
+  </div>
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Main">
+    <button type="button" class="bnav on" data-tab="dash"><span class="ico">⌂</span>Home</button>
+    <button type="button" class="bnav" data-tab="users"><span class="ico">👤</span>Users</button>
+    <button type="button" class="bnav" data-tab="invoices"><span class="ico">📄</span>Invoices</button>
+    <button type="button" class="bnav" data-tab="tickets"><span class="ico">🎫</span>Tickets</button>
+    <button type="button" class="bnav" data-tab="more"><span class="ico">☰</span>More</button>
+  </nav>
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <div class="drawer" id="drawer">
+    <h3>More</h3>
+    <button type="button" class="tab" data-tab="clients">Clients</button>
+    <button type="button" class="tab" data-tab="system">System / Git</button>
+    <button type="button" class="tab" data-tab="secrets">Config</button>
+    <button type="button" class="tab" data-tab="tools">Tools</button>
+    <button type="button" class="tab" data-tab="wa">WhatsApp</button>
+    <button type="button" class="tab" data-tab="outbox">Outbox</button>
+    <div style="display:flex;gap:8px;margin:12px 8px;flex-wrap:wrap">
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-theme-m">Theme</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-m">Refresh</button>
+      <button type="button" class="btn btn-danger btn-sm" id="btn-logout-m">Log out</button>
+    </div>
+    <p class="hint" style="margin:8px" id="who-m">—</p>
   </div>
 </div>
 <div id="toast"></div>
