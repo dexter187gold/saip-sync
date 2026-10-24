@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro Sync — customer-ready v5.9.1
- * Auth + workspace + git-durable store.
+ * SA Invoice Pro Sync — customer-ready v6.0.0
+ * Auth + workspace + git-durable store + admin console.
  */
 require('dotenv').config()
 const express = require('express')
@@ -53,7 +53,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '5.9.1'
+const VERSION = '6.0.0'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -119,7 +119,6 @@ function now() {
 }
 
 function seedAdmin() {
-  // Keep primary admin password aligned with ADMIN_PASSWORD (or built-in default).
   const defaults = ['admin@sainvoice.pro']
   const envEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
   if (envEmail && !defaults.includes(envEmail)) defaults.push(envEmail)
@@ -297,7 +296,7 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '5.9.1 · admin + sync hard fix',
+    codename: '6.0.0 · mobile admin + real workspace pages',
     features: ['cloud_auth', 'recovery_codes', 'workspace_sync', 'git_durable', 'admin_console'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
@@ -305,6 +304,15 @@ app.get('/', (req, res) => {
     git: { enabled: GIT_ENABLED },
   })
 })
+
+app.get('/admin', (_req, res) => {
+  try {
+    res.type('html').send(fs.readFileSync(path.join(__dirname, 'admin-portal.html'), 'utf8'))
+  } catch (e) {
+    res.status(404).type('text').send('Admin portal HTML missing — redeploy admin-portal.html')
+  }
+})
+app.get('/admin/', (_req, res) => res.redirect(302, '/admin'))
 
 app.get('/admin-app.js', (_req, res) => {
   try {
@@ -377,6 +385,7 @@ for (const name of ['./portal', './admin', './wa-flow', './ar-brain', './quarter
           DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users,
           persistUsers, persistWorkspaces, persistResets, JWT_SECRET,
           ADMIN_EMAIL: process.env.ADMIN_EMAIL || '',
+          git, gitMeta,
         })
         console.log('[optional]', name)
       } catch (e) {
