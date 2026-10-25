@@ -16,6 +16,11 @@
     applyTheme(cur === "dark" ? "light" : "dark");
   }
   applyTheme(localStorage.getItem("saip_admin_theme") || "dark");
+  setTimeout(function(){
+    var hint0=document.getElementById("login-hint");
+    if(hint0 && !hint0.textContent) hint0.textContent="Default: admin@sainvoice.pro / Admin@SAIP2026!";
+    fetchJson("/health").then(function(h){toast("Server v"+(h.version||"?")+" · "+(h.users||0)+" users");}).catch(function(){});
+  }, 50);
   function toast(m){
     var e = document.getElementById("toast");
     if (!e) return;
@@ -24,7 +29,11 @@
   }
   function showErr(m){ var e=document.getElementById("login-err"); if(e) e.textContent = m||""; }
   function esc(s){
-    return String(s==null?"":s).replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">").replace(/"/g,""");
+    return String(s==null?"":s)
+      .replace(/&/g,"&")
+      .replace(/</g,"<")
+      .replace(/>/g,">")
+      .replace(/"/g,""");
   }
   function money(n){
     var x=Number(n); if(!isFinite(x)) return "—";
@@ -79,7 +88,7 @@
     var email=document.getElementById("email").value.trim();
     var password=document.getElementById("password").value;
     if(!email||!password){showErr("Enter email and password.");return;}
-    var btn=document.getElementById("btn-login");btn.disabled=true;btn.textContent="Signing in…";
+    var btn=document.getElementById("btn-login");if(btn){btn.disabled=true;btn.textContent="Signing in…";}
     fetchJson("/health").catch(function(){return null;}).then(function(){
       return fetchJson("/api/auth/login",{method:"POST",body:{email:email,password:password}});
     }).then(function(d){
@@ -97,9 +106,13 @@
       else if(/Admin access required/i.test(msg))msg="Account is not admin. Use admin@sainvoice.pro";
       showErr(msg);if(hint)hint.textContent="Tip: Wake server → Use default → Sign in.";
       localStorage.removeItem("saip_admin_token");token="";
-    }).finally(function(){btn.disabled=false;btn.textContent="Sign in";});
+    }).finally(function(){if(btn){btn.disabled=false;btn.textContent="Sign in";}});
   }
-  function bind(id,fn){var el=document.getElementById(id);if(el)el.onclick=fn;}
+  function bind(id,fn){
+    var el=document.getElementById(id);
+    if(!el){console.warn("[admin] missing #"+id);return;}
+    el.addEventListener("click",function(e){e.preventDefault();fn(e);});
+  }
   bind("btn-fill",function(){document.getElementById("email").value=DEFAULT_EMAIL;document.getElementById("password").value=DEFAULT_PASS;showErr("");toast("Default credentials filled");});
   bind("btn-login",doLogin);
   bind("btn-wake",function(){showErr("Waking…");fetchJson("/health").then(function(h){showErr("");toast("Online · v"+(h.version||"?")+" · users "+(h.users||0));}).catch(function(e){showErr(e.message);});});
