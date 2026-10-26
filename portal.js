@@ -1,5 +1,5 @@
 /**
- * Customer portal — invoices, quotes, approve/reject (P4).
+ * Customer portal — invoices, quotes, approve/reject, PayFast pay (P4).
  */
 const crypto = require('crypto')
 const path = require('path')
@@ -137,6 +137,57 @@ function mountPortal(app, ctx) {
     res.json({ ok: true, quote: quotes[idx] })
   })
 
+  app.get('/api/portal/:token/pay/:invoiceId', (req, res) => {
+    portals = loadPortals()
+    const row = portals[req.params.token]
+    if (!row) return res.status(404).json({ error: 'Invalid portal link' })
+    if (row.expires && new Date(row.expires) < new Date()) {
+      return res.status(410).json({ error: 'Portal link expired' })
+    }
+    const ws = ownerWorkspace(row.userId)
+    const data = ws?.data || {}
+    const inv = (data.invoices || []).find((i) => String(i.id) === String(req.params.invoiceId))
+    if (!inv || String(inv.clientId) !== String(row.clientId)) {
+      return res.status(404).json({ error: 'Invoice not found' })
+    }
+    const settings = data.settings || {}
+    const company = data.company && !Array.isArray(data.company) ? data.company : (data.company && data.company[0]) || {}
+    const merchantId = process.env.PAYFAST_MERCHANT_ID || settings.payfastMerchantId || ''
+    const merchantKey = process.env.PAYFAST_MERCHANT_KEY || settings.payfastMerchantKey || ''
+    const sandbox = String(process.env.PAYFAST_SANDBOX || settings.payfastSandbox || 'true') !== 'false'
+    const amount = Number(inv.amountDue ?? inv.total ?? 0)
+    if (!(amount > 0)) return res.status(400).json({ error: 'Nothing due on this invoice' })
+    if (!merchantId || !merchantKey) {
+      return res.json({
+        ok: true,
+        configured: false,
+        amount,
+        number: inv.number,
+        message: 'PayFast not configured. Pay via EFT using company banking details, or ask the shop to enable PayFast.',
+        company: { name: company.name, email: company.email, phone: company.phone },
+      })
+    }
+    const base = (PUBLIC_BASE || '').replace(/\/$/, '')
+    const pf = {
+      merchant_id: String(merchantId),
+      merchant_key: String(merchantKey),
+      return_url: base + '/p/' + req.params.token + '?paid=1',
+      cancel_url: base + '/p/' + req.params.token + '?paid=0',
+      amount: amount.toFixed(2),
+      item_name: String(inv.number || inv.id).slice(0, 100),
+      custom_str1: String(inv.id),
+    }
+    res.json({
+      ok: true,
+      configured: true,
+      sandbox,
+      processUrl: sandbox
+        ? 'https://sandbox.payfast.co.za/eng/process'
+        : 'https://www.payfast.co.za/eng/process',
+      fields: pf,
+    })
+  })
+
   app.get('/p/:token', (req, res) => {
     const token = String(req.params.token || '').replace(/[^a-f0-9]/gi, '')
     const html = `<!DOCTYPE html>
@@ -165,7 +216,7 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
     const r=await fetch('/api/portal/'+token);
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'Failed');
-    const inv=(j.invoices||[]).map(i=>'<tr><td>'+(i.number||'')+'</td><td>'+(i.date||'')+'</td><td><span class="badge">'+(i.status||'')+'</span></td><td>R'+Number(i.amountDue!=null?i.amountDue:i.total||0).toFixed(2)+'</td></tr>').join('')||'<tr><td colspan="4" class="muted">No invoices</td></tr>';
+    const inv=(j.invoices||[]).map(i=>'<tr><td>'+(i.number||'')+'</td><td>'+(i.date||'')+'</td><td><span class="badge">'+(i.status||'')+'</span></td><td>R'+Number(i.amountDue!=null?i.amountDue:i.total||0).toFixed(2)+'</td><td><button type="button" class="btn-ok" data-pay="'+i.id+'">Pay</button></td></tr>').join('')||'<tr><td colspan="5" class="muted">No invoices</td></tr>';
     const quotes=(j.quotes||[]).map(q=>{
       const decided=q.portalDecision;
       const actions=decided
@@ -173,7 +224,7 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
         : '<div class="row-actions"><button type="button" class="btn-ok" data-q="'+q.id+'" data-d="approved">Approve</button><button type="button" class="btn-bad" data-q="'+q.id+'" data-d="rejected">Reject</button></div><textarea id="reason-'+q.id+'" rows="2" placeholder="Optional reason"></textarea>';
       return '<div class="card" style="margin:0 0 10px"><strong>'+(q.number||'Quote')+'</strong> · R'+Number(q.total||0).toFixed(2)+' · <span class="badge">'+(q.status||'')+'</span><div class="muted">'+(q.date||'')+'</div>'+actions+'</div>';
     }).join('')||'<p class="muted">No quotes</p>';
-    el.innerHTML='<div class="card"><h1>'+(j.company&&j.company.name||'Client portal')+'</h1><p class="muted">For '+(j.client&&j.client.name||'you')+'</p></div><div class="card"><h2>Quotes</h2>'+quotes+'</div><div class="card"><h2>Invoices</h2><table><thead><tr><th>Invoice</th><th>Date</th><th>Status</th><th>Balance</th></tr></thead><tbody>'+inv+'</tbody></table></div><p class="muted">SA Invoice Pro</p>';
+    el.innerHTML='<div class="card"><h1>'+(j.company&&j.company.name||'Client portal')+'</h1><p class="muted">For '+(j.client&&j.client.name||'you')+'</p></div><div class="card"><h2>Quotes</h2>'+quotes+'</div><div class="card"><h2>Invoices</h2><table><thead><tr><th>Invoice</th><th>Date</th><th>Status</th><th>Balance</th><th></th></tr></thead><tbody>'+inv+'</tbody></table></div><p class="muted">SA Invoice Pro</p>';
     el.querySelectorAll('button[data-q]').forEach(btn=>{
       btn.addEventListener('click',async()=>{
         const id=btn.getAttribute('data-q');
@@ -188,6 +239,23 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
         }catch(e){alert(e.message||'Error');btn.disabled=false;}
       });
     });
+    el.querySelectorAll('button[data-pay]').forEach(btn=>{
+      btn.addEventListener('click',async()=>{
+        btn.disabled=true;
+        try{
+          const rr=await fetch('/api/portal/'+token+'/pay/'+btn.getAttribute('data-pay'));
+          const jj=await rr.json();
+          if(!rr.ok) throw new Error(jj.error||'Failed');
+          if(!jj.configured){alert(jj.message||'PayFast not configured');btn.disabled=false;return;}
+          const form=document.createElement('form');
+          form.method='POST';form.action=jj.processUrl;
+          Object.keys(jj.fields||{}).forEach(k=>{
+            const inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=jj.fields[k];form.appendChild(inp);
+          });
+          document.body.appendChild(form);form.submit();
+        }catch(e){alert(e.message||'Error');btn.disabled=false;}
+      });
+    });
   }
   try{await load();}catch(e){el.innerHTML='<p class="err">'+(e.message||'Error')+'</p>';}
 })();
@@ -195,7 +263,7 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
     res.type('html').send(html)
   })
 
-  console.log('[portal] invoices + quote approve/reject')
+  console.log('[portal] quotes · pay · invoices')
 }
 
 module.exports = { mountPortal }
