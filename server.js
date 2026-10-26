@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro Sync v6.11.0 — auth, team workspace, portal, PayFast ITN, OAuth
+ * SA Invoice Pro Sync v6.11.1 — auth recovery, team, portal, PayFast ITN
  */
 require('dotenv').config()
 const express = require('express')
@@ -52,7 +52,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.11.0'
+const VERSION = '6.11.1'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -171,7 +171,13 @@ app.post('/api/auth/register', registerRateLimit, (req, res) => {
   if (!key) return res.status(400).json({ error: 'Valid email required' })
   const pwCheck = strongPassword(password)
   if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error })
-  if (users[key]) return res.status(409).json({ error: 'Email already registered' })
+  if (users[key]) {
+    return res.status(409).json({
+      error: 'This email already has a cloud account. Sign in, or use Forgot password to set a new password — your invoices/jobs stay in the cloud.',
+      code: 'email_exists',
+      exists: true,
+    })
+  }
   const id = uuidv4()
   const hash = bcrypt.hashSync(password, 10)
   const ts = now()
@@ -190,8 +196,24 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const user = users[key]
   const ok = user && bcrypt.compareSync(password, user.password_hash)
   if (!ok) {
-    const wipedHint = Object.keys(users).length === 0 ? ' (empty storage — re-register then sync)' : ''
-    return res.status(401).json({ error: 'Invalid email or password' + wipedHint })
+    if (Object.keys(users).length === 0) {
+      return res.status(401).json({
+        error: 'No accounts on server yet — Sign up once, then Sync Now from a device that has your data',
+        code: 'empty_store',
+      })
+    }
+    if (user) {
+      return res.status(401).json({
+        error: 'Wrong password for this email. Use Forgot password — recovery code sets a new password without losing your cloud profile.',
+        code: 'wrong_password',
+        exists: true,
+      })
+    }
+    return res.status(401).json({
+      error: 'No account with that email. Use Sign up, or check the email spelling.',
+      code: 'unknown_email',
+      exists: false,
+    })
   }
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
   res.json({ ok: true, token, user: { id: user.id, email: user.email, name: user.name } })
@@ -221,7 +243,7 @@ app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
   passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code }
   passwordResets['code:' + email + ':' + recovery_code] = { email, expires, used: false, created_at: now(), token, recovery_code }
   persistResets()
-  res.json({ ok: true, message: 'Recovery code created.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
+  res.json({ ok: true, message: 'Recovery code created. Enter it with your new password in the app.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
 })
 
 app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
@@ -278,8 +300,8 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.11.0 · PayFast ITN · team · portal · OAuth',
-    features: ['cloud_auth', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'payfast_itn', 'sms_proxy', 'admin_console'],
+    codename: '6.11.1 · auth recovery · PayFast ITN · team · portal',
+    features: ['cloud_auth', 'auth_recover', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'payfast_itn', 'admin_console'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
     ready: PUBLIC_BASE + '/ready',
@@ -316,13 +338,13 @@ app.post('/api/admin/git-flush', (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./payfastItn', './portal', './extras', './oauth', './team', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
+for (const name of ['./authRecover', './payfastItn', './portal', './extras', './oauth', './team', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
     const mod = require(name)
-    const fn = mod.mountPayfastItn || mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
+    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
     if (typeof fn === 'function') {
       try {
-        fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
+        fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
         console.log('[optional]', name)
       } catch (e) {
         console.warn('[optional]', name, e.message)
