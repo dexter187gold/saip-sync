@@ -246,19 +246,33 @@ input[type=range]{width:100%}
 (async()=>{
   const el=document.getElementById('app');
   const token=${JSON.stringify(token)};
+  function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return ch==='&'?'&amp;':ch==='<'?'&lt;':ch==='>'?'&gt;':ch==='"'?'&quot;':'&#39;'})}
+  function showError(message){
+    el.replaceChildren();
+    const box=document.createElement('div');box.className='card';
+    const heading=document.createElement('h1');heading.textContent='We could not load your account';box.appendChild(heading);
+    const detail=document.createElement('p');detail.className='err';detail.textContent=message||'The portal could not connect to the server.';box.appendChild(detail);
+    const retry=document.createElement('button');retry.type='button';retry.className='btn-ok';retry.textContent='Try again';retry.onclick=()=>{el.innerHTML='<p class="muted">Loading your account…</p>';load().catch(showError)};box.appendChild(retry);
+    const help=document.createElement('p');help.className='muted';help.textContent='If this keeps happening, contact the business that sent you this link.';box.appendChild(help);el.appendChild(box);
+  }
   async function load(){
-    const r=await fetch('/api/portal/'+token);
-    const j=await r.json();
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    let r;
+    try { r=await fetch('/api/portal/'+token,{signal:controller.signal,cache:'no-store'}); }
+    catch(e){ if(e&&e.name==='AbortError') throw new Error('The server took too long to respond. Please try again in a moment.'); throw new Error('Could not connect to the portal server. Check your connection and try again.'); }
+    finally { clearTimeout(timeout); }
+    const j=await r.json().catch(()=>({error:'The server returned an invalid response.'}));
     if(!r.ok) throw new Error(j.error||'Failed');
-    const inv=(j.invoices||[]).map(i=>'<tr><td>'+(i.number||'')+'</td><td>'+(i.date||'')+'</td><td><span class="badge">'+(i.status||'')+'</span></td><td>R'+Number(i.amountDue!=null?i.amountDue:i.total||0).toFixed(2)+'</td><td><button type="button" class="btn-ok" data-pay="'+i.id+'">Pay</button></td></tr>').join('')||'<tr><td colspan="5" class="muted">No invoices</td></tr>';
+    const inv=(j.invoices||[]).map(i=>'<tr><td>'+esc(i.number||'')+'</td><td>'+esc(i.date||'')+'</td><td><span class="badge">'+esc(i.status||'')+'</span></td><td>R'+Number(i.amountDue!=null?i.amountDue:i.total||0).toFixed(2)+'</td><td><button type="button" class="btn-ok" data-pay="'+esc(i.id)+'">Pay</button></td></tr>').join('')||'<tr><td colspan="5" class="muted">No invoices</td></tr>';
     const quotes=(j.quotes||[]).map(q=>{
       const decided=q.portalDecision;
       const actions=decided
-        ? '<span class="badge">'+decided+'</span>'
-        : '<div class="row-actions"><button type="button" class="btn-ok" data-q="'+q.id+'" data-d="approved">Approve</button><button type="button" class="btn-bad" data-q="'+q.id+'" data-d="rejected">Reject</button></div><textarea id="reason-'+q.id+'" rows="2" placeholder="Optional reason"></textarea>';
-      return '<div class="card" style="margin:0 0 10px"><strong>'+(q.number||'Quote')+'</strong> · R'+Number(q.total||0).toFixed(2)+' · <span class="badge">'+(q.status||'')+'</span><div class="muted">'+(q.date||'')+'</div>'+actions+'</div>';
+        ? '<span class="badge">'+esc(decided)+'</span>'
+        : '<div class="row-actions"><button type="button" class="btn-ok" data-q="'+esc(q.id)+'" data-d="approved">Approve</button><button type="button" class="btn-bad" data-q="'+q.id+'" data-d="rejected">Reject</button></div><textarea id="reason-'+esc(q.id)+'" rows="2" placeholder="Optional reason"></textarea>';
+      return '<div class="card" style="margin:0 0 10px"><strong>'+esc(q.number||'Quote')+'</strong> · R'+Number(q.total||0).toFixed(2)+' · <span class="badge">'+esc(q.status||'')+'</span><div class="muted">'+esc(q.date||'')+'</div>'+actions+'</div>';
     }).join('')||'<p class="muted">No quotes</p>';
-    el.innerHTML='<div class="card"><h1>'+(j.company&&j.company.name||'Client portal')+'</h1><p class="muted">For '+(j.client&&j.client.name||'you')+'</p></div><div class="card"><h2>Quotes</h2>'+quotes+'</div><div class="card"><h2>Invoices</h2><table><thead><tr><th>Invoice</th><th>Date</th><th>Status</th><th>Balance</th><th></th></tr></thead><tbody>'+inv+'</tbody></table></div><div class="card" id="fb-card"><h2>Rate this service</h2><p class="muted">0–10 · helps us improve</p><input id="fb-score" type="range" min="0" max="10" value="9"/><div style="font-weight:700;margin:8px 0" id="fb-val">9</div><input id="fb-note" type="text" placeholder="Optional note"/><button type="button" id="fb-send" class="btn-ok" style="margin-top:10px">Send feedback</button><p id="fb-msg" class="muted"></p></div><p class="muted">SA Invoice Pro</p>';
+    el.innerHTML='<div class="card"><h1>'+esc(j.company&&j.company.name||'Client portal')+'</h1><p class="muted">For '+esc(j.client&&j.client.name||'you')+'</p></div><div class="card"><h2>Quotes</h2>'+quotes+'</div><div class="card"><h2>Invoices</h2><table><thead><tr><th>Invoice</th><th>Date</th><th>Status</th><th>Balance</th><th></th></tr></thead><tbody>'+inv+'</tbody></table></div><div class="card" id="fb-card"><h2>Rate this service</h2><p class="muted">0–10 · helps us improve</p><input id="fb-score" type="range" min="0" max="10" value="9"/><div style="font-weight:700;margin:8px 0" id="fb-val">9</div><input id="fb-note" type="text" placeholder="Optional note"/><button type="button" id="fb-send" class="btn-ok" style="margin-top:10px">Send feedback</button><p id="fb-msg" class="muted"></p></div><p class="muted">SA Invoice Pro</p>';
     var sc=document.getElementById('fb-score');if(sc){sc.oninput=function(){document.getElementById('fb-val').textContent=sc.value};}
     var btn=document.getElementById('fb-send');if(btn){btn.onclick=async function(){try{var rr=await fetch('/api/portal/'+token+'/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:Number(sc&&sc.value||0),note:(document.getElementById('fb-note')||{}).value||''})});var bb=await rr.json().catch(function(){return{}});document.getElementById('fb-msg').textContent=rr.ok?('Thanks — score '+bb.score):(bb.error||'Failed');}catch(e){document.getElementById('fb-msg').textContent=e.message||'Error';}};
     el.querySelectorAll('button[data-q]').forEach(btn=>{
@@ -293,7 +307,7 @@ input[type=range]{width:100%}
       });
     });
   }
-  try{await load();}catch(e){el.innerHTML='<p class="err">'+(e.message||'Error')+'</p>';}
+  try{await load();}catch(e){showError(e&&e.message||'The portal could not be loaded.')}
 })();
 </script></body></html>`
     res.type('html').send(html)
