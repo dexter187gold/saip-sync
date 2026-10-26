@@ -1,5 +1,5 @@
 /**
- * Customer portal — invoices, quotes, approve/reject, signed PayFast pay.
+ * Customer portal — invoices, quotes, approve/reject, PayFast, NPS feedback.
  */
 const crypto = require('crypto')
 const path = require('path')
@@ -92,7 +92,7 @@ function mountPortal(app, ctx) {
         : { id: row.clientId, name: 'Client' },
       invoices: invoices.map((i) => ({
         id: i.id, number: i.number, date: i.date, dueDate: i.dueDate,
-        status: i.status, total: i.total, amountDue: i.amountDue ?? i.total,
+        status: i.status, total: i.total, amountDue: i.amountDue != null ? i.amountDue : i.total,
       })),
       quotes: quotes.map((q) => ({
         id: q.id, number: q.number, date: q.date, status: q.status || 'sent', total: q.total,
@@ -138,6 +138,31 @@ function mountPortal(app, ctx) {
     res.json({ ok: true, quote: quotes[idx] })
   })
 
+  app.post('/api/portal/:token/feedback', (req, res) => {
+    portals = loadPortals()
+    const row = portals[req.params.token]
+    if (!row) return res.status(404).json({ error: 'Invalid portal link' })
+    const score = Math.max(0, Math.min(10, Number(req.body?.score)))
+    const note = String(req.body?.note || '').slice(0, 400)
+    if (!Number.isFinite(score)) return res.status(400).json({ error: 'score 0-10 required' })
+    const ws = ownerWorkspace(row.userId)
+    if (!ws?.data) return res.status(400).json({ error: 'Workspace missing' })
+    if (!Array.isArray(ws.data.nps)) ws.data.nps = []
+    ws.data.nps.unshift({
+      id: 'nps-' + Date.now(),
+      clientId: row.clientId,
+      score,
+      note,
+      source: 'portal',
+      at: new Date().toISOString(),
+    })
+    ws.data.nps = ws.data.nps.slice(0, 200)
+    ws.version = (ws.version || 0) + 1
+    ws.updated_at = new Date().toISOString()
+    if (typeof persistWorkspaces === 'function') persistWorkspaces()
+    res.json({ ok: true, score })
+  })
+
   app.get('/api/portal/:token/pay/:invoiceId', (req, res) => {
     portals = loadPortals()
     const row = portals[req.params.token]
@@ -157,7 +182,7 @@ function mountPortal(app, ctx) {
     const merchantKey = process.env.PAYFAST_MERCHANT_KEY || settings.payfastMerchantKey || ''
     const passphrase = process.env.PAYFAST_PASSPHRASE || settings.payfastPassphrase || ''
     const sandbox = String(process.env.PAYFAST_SANDBOX || settings.payfastSandbox || 'true') !== 'false'
-    const amount = Number(inv.amountDue ?? inv.total ?? 0)
+    const amount = Number(inv.amountDue != null ? inv.amountDue : inv.total != null ? inv.total : 0)
     if (!(amount > 0)) return res.status(400).json({ error: 'Nothing due on this invoice' })
     if (!merchantId || !merchantKey) {
       return res.json({
@@ -213,7 +238,8 @@ table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:8px;text-
 .err{color:#f87171}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 button{appearance:none;border:0;border-radius:8px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
 .btn-ok{background:var(--ok);color:#052e16}.btn-bad{background:var(--bad);color:#fff}
-textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;background:#0f172a;color:var(--text);margin-top:6px}
+textarea,input[type=text]{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;background:#0f172a;color:var(--text);margin-top:6px}
+input[type=range]{width:100%}
 </style></head><body>
 <div id="app"><p class="muted">Loading…</p></div>
 <script>
@@ -232,7 +258,9 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
         : '<div class="row-actions"><button type="button" class="btn-ok" data-q="'+q.id+'" data-d="approved">Approve</button><button type="button" class="btn-bad" data-q="'+q.id+'" data-d="rejected">Reject</button></div><textarea id="reason-'+q.id+'" rows="2" placeholder="Optional reason"></textarea>';
       return '<div class="card" style="margin:0 0 10px"><strong>'+(q.number||'Quote')+'</strong> · R'+Number(q.total||0).toFixed(2)+' · <span class="badge">'+(q.status||'')+'</span><div class="muted">'+(q.date||'')+'</div>'+actions+'</div>';
     }).join('')||'<p class="muted">No quotes</p>';
-    el.innerHTML='<div class="card"><h1>'+(j.company&&j.company.name||'Client portal')+'</h1><p class="muted">For '+(j.client&&j.client.name||'you')+'</p></div><div class="card"><h2>Quotes</h2>'+quotes+'</div><div class="card"><h2>Invoices</h2><table><thead><tr><th>Invoice</th><th>Date</th><th>Status</th><th>Balance</th><th></th></tr></thead><tbody>'+inv+'</tbody></table></div><p class="muted">SA Invoice Pro</p>';
+    el.innerHTML='<div class="card"><h1>'+(j.company&&j.company.name||'Client portal')+'</h1><p class="muted">For '+(j.client&&j.client.name||'you')+'</p></div><div class="card"><h2>Quotes</h2>'+quotes+'</div><div class="card"><h2>Invoices</h2><table><thead><tr><th>Invoice</th><th>Date</th><th>Status</th><th>Balance</th><th></th></tr></thead><tbody>'+inv+'</tbody></table></div><div class="card" id="fb-card"><h2>Rate this service</h2><p class="muted">0–10 · helps us improve</p><input id="fb-score" type="range" min="0" max="10" value="9"/><div style="font-weight:700;margin:8px 0" id="fb-val">9</div><input id="fb-note" type="text" placeholder="Optional note"/><button type="button" id="fb-send" class="btn-ok" style="margin-top:10px">Send feedback</button><p id="fb-msg" class="muted"></p></div><p class="muted">SA Invoice Pro</p>';
+    var sc=document.getElementById('fb-score');if(sc){sc.oninput=function(){document.getElementById('fb-val').textContent=sc.value};}
+    var btn=document.getElementById('fb-send');if(btn){btn.onclick=async function(){try{var rr=await fetch('/api/portal/'+token+'/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:Number(sc&&sc.value||0),note:(document.getElementById('fb-note')||{}).value||''})});var bb=await rr.json().catch(function(){return{}});document.getElementById('fb-msg').textContent=rr.ok?('Thanks — score '+bb.score):(bb.error||'Failed');}catch(e){document.getElementById('fb-msg').textContent=e.message||'Error';}};
     el.querySelectorAll('button[data-q]').forEach(btn=>{
       btn.addEventListener('click',async()=>{
         const id=btn.getAttribute('data-q');
@@ -271,7 +299,7 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
     res.type('html').send(html)
   })
 
-  console.log('[portal] quotes · signed PayFast · invoices')
+  console.log('[portal] quotes · PayFast · invoices · NPS feedback')
 }
 
 module.exports = { mountPortal }
