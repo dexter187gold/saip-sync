@@ -1,5 +1,5 @@
 /**
- * Customer portal — invoices, quotes, approve/reject quote (P4).
+ * Customer portal — invoices, quotes, approve/reject (P4).
  */
 const crypto = require('crypto')
 const path = require('path')
@@ -46,15 +46,16 @@ function mountPortal(app, ctx) {
     const expires = new Date(Date.now() + (Number(days) || 90) * 86400000).toISOString()
     portals[token] = { userId: uid, clientId: String(clientId), expires, createdAt: new Date().toISOString() }
     savePortals(portals)
-    const url = `${(PUBLIC_BASE || '').replace(/\/$/, '')}/p/${token}`
+    const url = (PUBLIC_BASE || '').replace(/\/$/, '') + '/p/' + token
     res.json({ ok: true, token, url, expires, clientId: String(clientId) })
   })
 
   app.get('/api/portal/list', auth, (req, res) => {
     const uid = req.user.id
+    const base = (PUBLIC_BASE || '').replace(/\/$/, '')
     const list = Object.entries(portals)
       .filter(([, v]) => v.userId === uid)
-      .map(([token, v]) => ({ token, ...v, url: `${(PUBLIC_BASE || '').replace(/\/$/, '')}/p/${token}` }))
+      .map(([token, v]) => ({ token, ...v, url: base + '/p/' + token }))
     res.json({ ok: true, portals: list })
   })
 
@@ -137,14 +138,14 @@ function mountPortal(app, ctx) {
   })
 
   app.get('/p/:token', (req, res) => {
-    const token = req.params.token
-    res.type('html').send(`<!DOCTYPE html>
+    const token = String(req.params.token || '').replace(/[^a-f0-9]/gi, '')
+    const html = `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Client portal</title>
 <style>
-:root{--bg:#0f1419;--card:#1a2332;--text:#e7ecf3;--muted:#8b9bb4;--ok:#10b981;--bad:#ef4444;--btn:#3b82f6}
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:16px;line-height:1.45}
+:root{--bg:#0f1419;--card:#1a2332;--text:#e7ecf3;--muted:#8b9bb4;--ok:#10b981;--bad:#ef4444}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:16px}
 .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:12px}
 h1{font-size:1.25rem;margin:0 0 4px}h2{font-size:1rem;margin:0 0 10px}
 .muted{color:var(--muted);font-size:13px}
@@ -153,18 +154,18 @@ table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:8px;text-
 .err{color:#f87171}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 button{appearance:none;border:0;border-radius:8px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
 .btn-ok{background:var(--ok);color:#052e16}.btn-bad{background:var(--bad);color:#fff}
-input,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;background:#0f172a;color:var(--text);margin-top:6px}
+textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;background:#0f172a;color:var(--text);margin-top:6px}
 </style></head><body>
 <div id="app"><p class="muted">Loading…</p></div>
 <script>
 (async()=>{
   const el=document.getElementById('app');
-  const token=${JSON.stringify('+token+')};
+  const token=${JSON.stringify(token)};
   async function load(){
     const r=await fetch('/api/portal/'+token);
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'Failed');
-    const inv=(j.invoices||[]).map(i=>'<tr><td>'+(i.number||'')+'</td><td>'+(i.date||'')+'</td><td><span class="badge">'+(i.status||'')+'</span></td><td>R'+Number(i.amountDue??i.total||0).toFixed(2)+'</td></tr>').join('')||'<tr><td colspan="4" class="muted">No invoices</td></tr>';
+    const inv=(j.invoices||[]).map(i=>'<tr><td>'+(i.number||'')+'</td><td>'+(i.date||'')+'</td><td><span class="badge">'+(i.status||'')+'</span></td><td>R'+Number(i.amountDue!=null?i.amountDue:i.total||0).toFixed(2)+'</td></tr>').join('')||'<tr><td colspan="4" class="muted">No invoices</td></tr>';
     const quotes=(j.quotes||[]).map(q=>{
       const decided=q.portalDecision;
       const actions=decided
@@ -180,7 +181,7 @@ input,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544
         const reason=(document.getElementById('reason-'+id)||{}).value||'';
         btn.disabled=true;
         try{
-          const rr=await fetch('/api/portal/'+token+'/quote/'+id+'/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,reason})});
+          const rr=await fetch('/api/portal/'+token+'/quote/'+id+'/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:decision,reason:reason})});
           const jj=await rr.json();
           if(!rr.ok) throw new Error(jj.error||'Failed');
           await load();
@@ -190,7 +191,8 @@ input,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544
   }
   try{await load();}catch(e){el.innerHTML='<p class="err">'+(e.message||'Error')+'</p>';}
 })();
-</script></body></html>`.replace("'"+token+"'", JSON.stringify(token)).replace('JSON.stringify('+"'"+'+token+'"'+')', 'TOKEN_PLACEHOLDER'))
+</script></body></html>`
+    res.type('html').send(html)
   })
 
   console.log('[portal] invoices + quote approve/reject')
