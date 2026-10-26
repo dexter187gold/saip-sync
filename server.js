@@ -1,6 +1,6 @@
 /**
- * SA Invoice Pro Sync — customer-ready v6.0.0
- * Auth + workspace + git-durable store + admin console.
+ * SA Invoice Pro Sync — customer-ready v6.9.0
+ * Auth + workspace + git-durable store + admin + portal + SMS proxy.
  */
 require('dotenv').config()
 const express = require('express')
@@ -53,7 +53,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.0.0'
+const VERSION = '6.9.0'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -296,8 +296,8 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.0.0 · mobile admin + real workspace pages',
-    features: ['cloud_auth', 'recovery_codes', 'workspace_sync', 'git_durable', 'admin_console'],
+    codename: '6.9.0 · portal · SMS proxy · device bind · branch WS',
+    features: ['cloud_auth', 'recovery_codes', 'workspace_sync', 'git_durable', 'admin_console', 'customer_portal', 'sms_proxy', 'device_bind', 'branch_workspace'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
     ready: PUBLIC_BASE + '/ready',
@@ -373,11 +373,11 @@ app.post('/api/admin/git-flush', (req, res) => {
   })
 })
 
-for (const name of ['./portal', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
+for (const name of ['./portal', './extras', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
     const mod = require(name)
     const fn =
-      mod.mountPortal || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain ||
+      mod.mountPortal || mod.mountExtras || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain ||
       mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
     if (typeof fn === 'function') {
       try {
