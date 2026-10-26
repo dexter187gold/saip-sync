@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro Sync v6.9.5 — auth, team-linked workspace, portal, SMS, OAuth
+ * SA Invoice Pro Sync v6.11.0 — auth, team workspace, portal, PayFast ITN, OAuth
  */
 require('dotenv').config()
 const express = require('express')
@@ -52,7 +52,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.9.5'
+const VERSION = '6.11.0'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -248,7 +248,6 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   res.json({ ok: true, message: 'Password updated', token: jwtToken, user: { id: user.id, email: user.email, name: user.name } })
 })
 
-// Team-linked workspace: members read/write owner's data
 app.get('/api/workspace', auth, (req, res) => {
   const me = Object.values(users).find((u) => u.id === req.user.id)
   const ownerId = (me && me.linkedWorkspaceOwnerId) || req.user.id
@@ -279,8 +278,8 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.9.5 · team workspace · Google OAuth · portal · SMS',
-    features: ['cloud_auth', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'sms_proxy', 'device_bind', 'admin_console'],
+    codename: '6.11.0 · PayFast ITN · team · portal · OAuth',
+    features: ['cloud_auth', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'payfast_itn', 'sms_proxy', 'admin_console'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
     ready: PUBLIC_BASE + '/ready',
@@ -317,10 +316,10 @@ app.post('/api/admin/git-flush', (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./portal', './extras', './oauth', './team', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
+for (const name of ['./payfastItn', './portal', './extras', './oauth', './team', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
     const mod = require(name)
-    const fn = mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
+    const fn = mod.mountPayfastItn || mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
     if (typeof fn === 'function') {
       try {
         fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
