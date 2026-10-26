@@ -2,12 +2,26 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { resolveWorkspaceKey } = require('../workspace-owner')
 
-test('prefers the authenticated user ID when its workspace exists', () => {
+test('prefers the populated user-ID workspace over a legacy email workspace', () => {
   assert.equal(resolveWorkspaceKey({
     user: { id: 'u-1', email: 'a@example.com' },
     tokenUser: { id: 'u-1', email: 'a@example.com' },
-    workspaces: { 'u-1': { data: {} }, 'a@example.com': { data: { legacy: true } } },
+    workspaces: {
+      'u-1': { data: { clients: [{ id: 'new' }] } },
+      'a@example.com': { data: { clients: [{ id: 'legacy' }] } },
+    },
   }), 'u-1')
+})
+
+test('prefers populated legacy email profile over an empty ID workspace shell', () => {
+  assert.equal(resolveWorkspaceKey({
+    user: { id: 'u-1', email: 'a@example.com' },
+    tokenUser: { id: 'u-1', email: 'a@example.com' },
+    workspaces: {
+      'u-1': { data: { clients: [], invoices: [], settings: {} } },
+      'a@example.com': { data: { clients: [{ id: 'legacy' }] } },
+    },
+  }), 'a@example.com')
 })
 
 test('preserves an explicit team workspace owner link', () => {
