@@ -1,6 +1,5 @@
 /**
- * SA Invoice Pro Sync — customer-ready v6.9.0
- * Auth + workspace + git-durable store + admin + portal + SMS + OAuth.
+ * SA Invoice Pro Sync v6.9.5 — auth, team-linked workspace, portal, SMS, OAuth
  */
 require('dotenv').config()
 const express = require('express')
@@ -53,7 +52,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.9.0'
+const VERSION = '6.9.5'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -101,7 +100,6 @@ function reloadFromDisk() {
   for (const k of Object.keys(passwordResets)) delete passwordResets[k]
   Object.assign(passwordResets, r)
 }
-
 function persistUsers() {
   saveJson(USERS_FILE, users)
   git.schedulePush('users')
@@ -127,32 +125,18 @@ function seedAdmin() {
     if (!users[key]) {
       const id = uuidv4()
       users[key] = {
-        id,
-        email: key,
+        id, email: key,
         password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10),
-        name: 'Administrator',
-        role: 'admin',
-        created_at: now(),
-        updated_at: now(),
+        name: 'Administrator', role: 'admin',
+        created_at: now(), updated_at: now(),
       }
-      workspaces[id] = {
-        data: { clients: [], invoices: [], tickets: [], settings: {} },
-        version: 1,
-        updated_at: now(),
-      }
+      workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: now() }
       console.log('[admin] seeded', key)
     } else {
       let changed = false
-      if (users[key].role !== 'admin') {
-        users[key].role = 'admin'
-        changed = true
-      }
+      if (users[key].role !== 'admin') { users[key].role = 'admin'; changed = true }
       let needHash = force
-      try {
-        if (!bcrypt.compareSync(DEFAULT_ADMIN_PASSWORD, users[key].password_hash)) needHash = true
-      } catch {
-        needHash = true
-      }
+      try { if (!bcrypt.compareSync(DEFAULT_ADMIN_PASSWORD, users[key].password_hash)) needHash = true } catch { needHash = true }
       if (needHash) {
         users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10)
         users[key].updated_at = now()
@@ -206,7 +190,7 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const user = users[key]
   const ok = user && bcrypt.compareSync(password, user.password_hash)
   if (!ok) {
-    const wipedHint = Object.keys(users).length === 0 ? ' (empty storage — re-register then sync from original device)' : ''
+    const wipedHint = Object.keys(users).length === 0 ? ' (empty storage — re-register then sync)' : ''
     return res.status(401).json({ error: 'Invalid email or password' + wipedHint })
   }
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
@@ -216,7 +200,14 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
 app.get('/api/auth/me', auth, (req, res) => {
   const user = Object.values(users).find((u) => u.id === req.user.id)
   if (!user) return res.status(404).json({ error: 'User not found' })
-  res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, created_at: user.created_at } })
+  res.json({
+    ok: true,
+    user: {
+      id: user.id, email: user.email, name: user.name, created_at: user.created_at,
+      linkedWorkspaceOwnerId: user.linkedWorkspaceOwnerId || null,
+      teamRole: user.teamRole || null,
+    },
+  })
 })
 
 app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
@@ -257,21 +248,26 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   res.json({ ok: true, message: 'Password updated', token: jwtToken, user: { id: user.id, email: user.email, name: user.name } })
 })
 
+// Team-linked workspace: members read/write owner's data
 app.get('/api/workspace', auth, (req, res) => {
-  const row = workspaces[req.user.id]
+  const me = Object.values(users).find((u) => u.id === req.user.id)
+  const ownerId = (me && me.linkedWorkspaceOwnerId) || req.user.id
+  const row = workspaces[ownerId]
   if (!row) return res.status(404).json({ error: 'No workspace' })
-  res.json({ ok: true, version: row.version, updated_at: row.updated_at, data: row.data })
+  res.json({ ok: true, version: row.version, updated_at: row.updated_at, data: row.data, ownerId, shared: ownerId !== req.user.id })
 })
 
 app.put('/api/workspace', auth, (req, res) => {
   const { data } = req.body || {}
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' })
-  const current = workspaces[req.user.id] || { version: 0 }
+  const me = Object.values(users).find((u) => u.id === req.user.id)
+  const ownerId = (me && me.linkedWorkspaceOwnerId) || req.user.id
+  const current = workspaces[ownerId] || { version: 0 }
   const newVersion = (current.version || 0) + 1
   const ts = now()
-  workspaces[req.user.id] = { data, version: newVersion, updated_at: ts }
+  workspaces[ownerId] = { data, version: newVersion, updated_at: ts }
   persistWorkspaces()
-  res.json({ ok: true, version: newVersion, updated_at: ts })
+  res.json({ ok: true, version: newVersion, updated_at: ts, ownerId, shared: ownerId !== req.user.id })
 })
 
 app.get('/api/workspace/history', auth, (req, res) => res.json({ ok: true, history: [] }))
@@ -283,8 +279,8 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.9.0 · portal · SMS · device · branch · oauth',
-    features: ['cloud_auth', 'workspace_sync', 'admin_console', 'customer_portal', 'sms_proxy', 'device_bind', 'branch_workspace', 'google_oauth'],
+    codename: '6.9.5 · team workspace · Google OAuth · portal · SMS',
+    features: ['cloud_auth', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'sms_proxy', 'device_bind', 'admin_console'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
     ready: PUBLIC_BASE + '/ready',
@@ -293,19 +289,13 @@ app.get('/', (req, res) => {
 })
 
 app.get('/admin', (_req, res) => {
-  try {
-    res.type('html').send(fs.readFileSync(path.join(__dirname, 'admin-portal.html'), 'utf8'))
-  } catch (e) {
-    res.status(404).type('text').send('Admin portal HTML missing')
-  }
+  try { res.type('html').send(fs.readFileSync(path.join(__dirname, 'admin-portal.html'), 'utf8')) }
+  catch (e) { res.status(404).type('text').send('Admin portal HTML missing') }
 })
 app.get('/admin/', (_req, res) => res.redirect(302, '/admin'))
 app.get('/admin-app.js', (_req, res) => {
-  try {
-    res.type('application/javascript').send(fs.readFileSync(path.join(__dirname, 'admin-app.js'), 'utf8'))
-  } catch (e) {
-    res.status(404).type('text').send('// missing')
-  }
+  try { res.type('application/javascript').send(fs.readFileSync(path.join(__dirname, 'admin-app.js'), 'utf8')) }
+  catch (e) { res.status(404).type('text').send('// missing') }
 })
 
 app.get('/health', (_req, res) => {
@@ -327,10 +317,10 @@ app.post('/api/admin/git-flush', (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./portal', './extras', './oauth', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
+for (const name of ['./portal', './extras', './oauth', './team', './admin', './wa-flow', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
     const mod = require(name)
-    const fn = mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
+    const fn = mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
     if (typeof fn === 'function') {
       try {
         fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
