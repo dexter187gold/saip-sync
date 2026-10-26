@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid')
 const path = require('path')
 const fs = require('fs')
 const { createGitStore, GIT_ENABLED } = require('./git-store')
+const { resolveWorkspaceKey } = require('./workspace-owner')
 
 let mountSecurity, loginRateLimit, registerRateLimit, strongPassword, safeEmail
 try {
@@ -272,9 +273,9 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
 
 app.get('/api/workspace', auth, (req, res) => {
   const me = Object.values(users).find((u) => u.id === req.user.id)
-  const ownerId = (me && me.linkedWorkspaceOwnerId) || req.user.id
-  const row = workspaces[ownerId]
-  if (!row) return res.status(404).json({ error: 'No workspace' })
+  const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces })
+  const row = ownerId ? workspaces[ownerId] : null
+  if (!row) return res.status(404).json({ error: 'No workspace for this email yet' })
   res.json({ ok: true, version: row.version, updated_at: row.updated_at, data: row.data, ownerId, shared: ownerId !== req.user.id })
 })
 
@@ -282,7 +283,7 @@ app.put('/api/workspace', auth, (req, res) => {
   const { data } = req.body || {}
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' })
   const me = Object.values(users).find((u) => u.id === req.user.id)
-  const ownerId = (me && me.linkedWorkspaceOwnerId) || req.user.id
+  const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces }) || req.user.id
   const current = workspaces[ownerId] || { version: 0 }
   const newVersion = (current.version || 0) + 1
   const ts = now()
