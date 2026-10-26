@@ -258,11 +258,12 @@ input[type=range]{width:100%}
   async function load(){
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),12000);
-    let r;
-    try { r=await fetch('/api/portal/'+token,{signal:controller.signal,cache:'no-store'}); }
-    catch(e){ if(e&&e.name==='AbortError') throw new Error('The server took too long to respond. Please try again in a moment.'); throw new Error('Could not connect to the portal server. Check your connection and try again.'); }
+    let r, j;
+    try {
+      r=await fetch('/api/portal/'+token,{signal:controller.signal,cache:'no-store'});
+      j=await r.json().catch(()=>({error:'The server returned an invalid response.'}));
+    } catch(e){ if(e&&e.name==='AbortError') throw new Error('The server took too long to respond. Please try again in a moment.'); throw new Error('Could not connect to the portal server. Check your connection and try again.'); }
     finally { clearTimeout(timeout); }
-    const j=await r.json().catch(()=>({error:'The server returned an invalid response.'}));
     if(!r.ok) throw new Error(j.error||'Failed');
     const inv=(j.invoices||[]).map(i=>'<tr><td>'+esc(i.number||'')+'</td><td>'+esc(i.date||'')+'</td><td><span class="badge">'+esc(i.status||'')+'</span></td><td>R'+Number(i.amountDue!=null?i.amountDue:i.total||0).toFixed(2)+'</td><td><button type="button" class="btn-ok" data-pay="'+esc(i.id)+'">Pay</button></td></tr>').join('')||'<tr><td colspan="5" class="muted">No invoices</td></tr>';
     const quotes=(j.quotes||[]).map(q=>{
