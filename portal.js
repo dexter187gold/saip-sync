@@ -1,9 +1,10 @@
 /**
- * Customer portal — invoices, quotes, approve/reject, PayFast pay (P4).
+ * Customer portal — invoices, quotes, approve/reject, signed PayFast pay.
  */
 const crypto = require('crypto')
 const path = require('path')
 const fs = require('fs')
+const { buildSignature } = require('./payfastSign')
 
 function mountPortal(app, ctx) {
   const { workspaces, auth, PUBLIC_BASE, persistWorkspaces, DATA_DIR } = ctx
@@ -154,6 +155,7 @@ function mountPortal(app, ctx) {
     const company = data.company && !Array.isArray(data.company) ? data.company : (data.company && data.company[0]) || {}
     const merchantId = process.env.PAYFAST_MERCHANT_ID || settings.payfastMerchantId || ''
     const merchantKey = process.env.PAYFAST_MERCHANT_KEY || settings.payfastMerchantKey || ''
+    const passphrase = process.env.PAYFAST_PASSPHRASE || settings.payfastPassphrase || ''
     const sandbox = String(process.env.PAYFAST_SANDBOX || settings.payfastSandbox || 'true') !== 'false'
     const amount = Number(inv.amountDue ?? inv.total ?? 0)
     if (!(amount > 0)) return res.status(400).json({ error: 'Nothing due on this invoice' })
@@ -177,10 +179,16 @@ function mountPortal(app, ctx) {
       item_name: String(inv.number || inv.id).slice(0, 100),
       custom_str1: String(inv.id),
     }
+    try {
+      pf.signature = buildSignature(pf, passphrase)
+    } catch (e) {
+      console.warn('[portal] payfast sign', e.message)
+    }
     res.json({
       ok: true,
       configured: true,
       sandbox,
+      signed: !!pf.signature,
       processUrl: sandbox
         ? 'https://sandbox.payfast.co.za/eng/process'
         : 'https://www.payfast.co.za/eng/process',
@@ -263,7 +271,7 @@ textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #2a3544;backg
     res.type('html').send(html)
   })
 
-  console.log('[portal] quotes · pay · invoices')
+  console.log('[portal] quotes · signed PayFast · invoices')
 }
 
 module.exports = { mountPortal }
