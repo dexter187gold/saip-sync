@@ -27,6 +27,14 @@ const GIT_USER = process.env.GIT_DATA_USER || 'saip-sync-bot'
 const GIT_EMAIL = process.env.GIT_DATA_EMAIL || 'saip-sync@users.noreply.github.com'
 const GIT_PUSH_DEBOUNCE_MS = Number(process.env.GIT_PUSH_DEBOUNCE_MS) || 5000
 
+const DATA_JSON_FILES = [
+  'users.json',
+  'workspaces.json',
+  'password_resets.json',
+  'portals.json',
+  'portal_decisions.json',
+]
+
 const meta = {
   enabled: GIT_ENABLED,
   lastPullAt: null,
@@ -51,11 +59,12 @@ function authedGitUrl(repoUrl) {
 }
 
 function ensureDataFiles(DATA_DIR) {
-  for (const name of ['users.json', 'workspaces.json', 'password_resets.json']) {
+  for (const name of DATA_JSON_FILES) {
     const f = path.join(DATA_DIR, name)
     if (!fs.existsSync(f)) {
       try {
-        fs.writeFileSync(f, '{}\n', 'utf8')
+        const empty = name.includes('portal') && !name.includes('decision') ? '{}\n' : name.includes('decision') ? '[]\n' : '{}\n'
+        fs.writeFileSync(f, empty, 'utf8')
       } catch {}
     }
   }
@@ -175,7 +184,7 @@ function createGitStore(DATA_DIR) {
       } catch {
         try { await runGit(['remote', 'add', 'origin', remote]) } catch {}
       }
-      await runGit(['add', 'users.json', 'workspaces.json', 'password_resets.json']).catch(() => {})
+      await runGit(['add', ...DATA_JSON_FILES]).catch(() => {})
       await runGit(['add', '-A', '*.json']).catch(() => {})
       let status = ''
       try {

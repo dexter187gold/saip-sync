@@ -1,5 +1,6 @@
 /**
  * Customer portal — invoices, quotes, approve/reject, PayFast, NPS feedback.
+ * Paths used by hosted /p/:token UI AND SPA (/api/portal/view, /quote-decision).
  */
 const crypto = require('crypto')
 const path = require('path')
@@ -7,7 +8,7 @@ const fs = require('fs')
 const { buildSignature } = require('./payfastSign')
 
 function mountPortal(app, ctx) {
-  const { workspaces, auth, PUBLIC_BASE, persistWorkspaces, DATA_DIR } = ctx
+  const { workspaces, auth, PUBLIC_BASE, persistWorkspaces, DATA_DIR, git } = ctx
   const PORTALS_FILE = path.join(DATA_DIR || path.join(__dirname, 'data'), 'portals.json')
 
   function loadPortals() {
@@ -28,6 +29,9 @@ function mountPortal(app, ctx) {
     } catch (e) {
       console.warn('[portal] save', e.message)
     }
+    try {
+      if (git && typeof git.schedulePush === 'function') git.schedulePush('portals')
+    } catch {}
   }
 
   let portals = loadPortals()
@@ -35,6 +39,134 @@ function mountPortal(app, ctx) {
 
   function ownerWorkspace(userId) {
     return workspaces[userId]
+  }
+
+  function portalPayload(token, row) {
+    const ws = ownerWorkspace(row.userId)
+    const data = ws?.data || {}
+    const client = (data.clients || []).find((c) => String(c.id) === String(row.clientId))
+    const invoices = (data.invoices || []).filter((i) => String(i.clientId) === String(row.clientId))
+    const quotes = (data.quotes || []).filter((q) => String(q.clientId) === String(row.clientId))
+    const company =
+      data.company && !Array.isArray(data.company)
+        ? data.company
+        : (data.company && data.company[0]) || {}
+    return {
+      ok: true,
+      company: {
+        name: company.name,
+        phone: company.phone,
+        email: company.email,
+        whatsapp: company.whatsapp || company.phone,
+      },
+      client: client
+        ? { id: client.id, name: client.name, company: client.company }
+        : { id: row.clientId, name: 'Client' },
+      invoices: invoices.map((i) => ({
+        id: i.id,
+        number: i.number,
+        date: i.date,
+        dueDate: i.dueDate,
+        status: i.status,
+        total: i.total,
+        amountDue: i.amountDue != null ? i.amountDue : i.total,
+      })),
+      quotes: quotes.map((q) => ({
+        id: q.id,
+        number: q.number,
+        date: q.date,
+        validUntil: q.validUntil,
+        status: q.status || 'sent',
+        total: q.total,
+        lines: Array.isArray(q.lines) ? q.lines.slice(0, 20) : [],
+        portalDecision: q.portalDecision || null,
+        portalDecisionAt: q.portalDecisionAt || null,
+        portalNote: q.portalNote || q.portalDecisionReason || null,
+      })),
+      expires: row.expires,
+      token,
+    }
+  }
+
+  function resolveToken(raw) {
+    portals = loadPortals()
+    const token = String(raw || '').trim()
+    const row = portals[token]
+    if (!row) return { error: 'Invalid or expired portal link', status: 404 }
+    if (row.expires && new Date(row.expires) < new Date()) {
+      delete portals[token]
+      savePortals(portals)
+      return { error: 'Portal link expired', status: 410 }
+    }
+    return { token, row }
+  }
+
+  function applyDecision(token, quoteId, decisionRaw, reason) {
+    const resolved = resolveToken(token)
+    if (resolved.error) return resolved
+    const { row } = resolved
+    let decision = String(decisionRaw || '').toLowerCase()
+    // SPA uses approve/reject; hosted UI uses approved/rejected
+    if (decision === 'approve' || decision === 'accept') decision = 'approved'
+    if (decision === 'reject' || decision === 'decline') decision = 'rejected'
+    if (!['approved', 'rejected'].includes(decision)) {
+      return { error: 'decision must be approve/reject (or approved/rejected)', status: 400 }
+    }
+    const note = String(reason || '').slice(0, 500)
+    const ws = ownerWorkspace(row.userId)
+    if (!ws?.data) return { error: 'Workspace missing — shop must Sync Now first', status: 400 }
+    const quotes = ws.data.quotes || []
+    const idx = quotes.findIndex((q) => String(q.id) === String(quoteId))
+    if (idx < 0) return { error: 'Quote not found', status: 404 }
+    const q = quotes[idx]
+    if (String(q.clientId) !== String(row.clientId)) {
+      return { error: 'Quote not in this portal', status: 403 }
+    }
+    const prev = String(q.status || '').toLowerCase()
+    if (['accepted', 'rejected', 'converted'].includes(prev) || q.portalDecision) {
+      return { error: 'Quote already decided', status: 409, quote: q }
+    }
+    const ts = new Date().toISOString()
+    quotes[idx] = {
+      ...q,
+      status: decision === 'approved' ? 'accepted' : 'rejected',
+      portalDecision: decision === 'approved' ? 'accepted' : 'rejected',
+      portalDecisionAt: ts,
+      portalDecisionReason: note || null,
+      portalNote: note || null,
+      updatedAt: ts,
+    }
+    ws.data.quotes = quotes
+    ws.version = (ws.version || 0) + 1
+    ws.updated_at = ts
+    if (typeof persistWorkspaces === 'function') persistWorkspaces()
+
+    // Decision log for desk pull
+    try {
+      const logFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'portal_decisions.json')
+      let log = []
+      try {
+        if (fs.existsSync(logFile)) log = JSON.parse(fs.readFileSync(logFile, 'utf8')) || []
+      } catch {}
+      if (!Array.isArray(log)) log = []
+      log.push({
+        id: 'dec_' + Date.now().toString(36),
+        token,
+        quoteId: String(quoteId),
+        action: decision === 'approved' ? 'accepted' : 'rejected',
+        note,
+        clientId: row.clientId,
+        userId: row.userId,
+        at: ts,
+      })
+      if (log.length > 500) log = log.slice(-500)
+      fs.writeFileSync(logFile, JSON.stringify(log, null, 2), 'utf8')
+      if (git && typeof git.schedulePush === 'function') git.schedulePush('portal_decisions')
+    } catch (e) {
+      console.warn('[portal] decision log', e.message)
+    }
+
+    return { ok: true, quote: quotes[idx] }
   }
 
   app.post('/api/portal/create', auth, (req, res) => {
@@ -45,18 +177,33 @@ function mountPortal(app, ctx) {
     if (!ws?.data) return res.status(400).json({ error: 'Push workspace first' })
     const token = crypto.randomBytes(24).toString('hex')
     const expires = new Date(Date.now() + (Number(days) || 90) * 86400000).toISOString()
-    portals[token] = { userId: uid, clientId: String(clientId), expires, createdAt: new Date().toISOString() }
+    portals[token] = {
+      userId: uid,
+      clientId: String(clientId),
+      expires,
+      createdAt: new Date().toISOString(),
+    }
     savePortals(portals)
-    const url = (PUBLIC_BASE || '').replace(/\/$/, '') + '/p/' + token
+    const base = (PUBLIC_BASE || '').replace(/\/$/, '')
+    // Prefer SPA portal path when FRONTEND_PUBLIC_URL set; else hosted /p/
+    const spaOrigin = (process.env.FRONTEND_PUBLIC_URL || process.env.PORTAL_PUBLIC_URL || '').replace(/\/$/, '')
+    const url = spaOrigin
+      ? `${spaOrigin}/portal/${token}`
+      : `${base}/p/${token}`
     res.json({ ok: true, token, url, expires, clientId: String(clientId) })
   })
 
   app.get('/api/portal/list', auth, (req, res) => {
     const uid = req.user.id
     const base = (PUBLIC_BASE || '').replace(/\/$/, '')
+    const spaOrigin = (process.env.FRONTEND_PUBLIC_URL || process.env.PORTAL_PUBLIC_URL || '').replace(/\/$/, '')
     const list = Object.entries(portals)
       .filter(([, v]) => v.userId === uid)
-      .map(([token, v]) => ({ token, ...v, url: base + '/p/' + token }))
+      .map(([token, v]) => ({
+        token,
+        ...v,
+        url: spaOrigin ? `${spaOrigin}/portal/${token}` : `${base}/p/${token}`,
+      }))
     res.json({ ok: true, portals: list })
   })
 
@@ -69,73 +216,76 @@ function mountPortal(app, ctx) {
     res.json({ ok: true })
   })
 
-  app.get('/api/portal/:token', (req, res) => {
-    portals = loadPortals()
-    const row = portals[req.params.token]
-    if (!row) return res.status(404).json({ error: 'Invalid or expired portal link' })
-    if (row.expires && new Date(row.expires) < new Date()) {
-      delete portals[req.params.token]
-      savePortals(portals)
-      return res.status(410).json({ error: 'Portal link expired' })
+  /** SPA + external clients */
+  app.get('/api/portal/view/:token', (req, res) => {
+    const resolved = resolveToken(req.params.token)
+    if (resolved.error) return res.status(resolved.status || 404).json({ error: resolved.error })
+    res.json(portalPayload(resolved.token, resolved.row))
+  })
+
+  app.post('/api/portal/quote-decision', (req, res) => {
+    const body = req.body || {}
+    const token = body.token || body.portalToken
+    const quoteId = body.quoteId || body.quote_id
+    const decision = body.action || body.decision
+    const note = body.note || body.reason || ''
+    if (!token || !quoteId) {
+      return res.status(400).json({ error: 'token and quoteId required' })
     }
-    const ws = ownerWorkspace(row.userId)
-    const data = ws?.data || {}
-    const client = (data.clients || []).find((c) => String(c.id) === String(row.clientId))
-    const invoices = (data.invoices || []).filter((i) => String(i.clientId) === String(row.clientId))
-    const quotes = (data.quotes || []).filter((q) => String(q.clientId) === String(row.clientId))
-    const company = data.company && !Array.isArray(data.company) ? data.company : (data.company && data.company[0]) || {}
+    const result = applyDecision(token, quoteId, decision, note)
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        error: result.error,
+        quote: result.quote || undefined,
+      })
+    }
     res.json({
       ok: true,
-      company: { name: company.name, phone: company.phone, email: company.email },
-      client: client
-        ? { id: client.id, name: client.name, company: client.company }
-        : { id: row.clientId, name: 'Client' },
-      invoices: invoices.map((i) => ({
-        id: i.id, number: i.number, date: i.date, dueDate: i.dueDate,
-        status: i.status, total: i.total, amountDue: i.amountDue != null ? i.amountDue : i.total,
-      })),
-      quotes: quotes.map((q) => ({
-        id: q.id, number: q.number, date: q.date, status: q.status || 'sent', total: q.total,
-        portalDecision: q.portalDecision || null, portalDecisionAt: q.portalDecisionAt || null,
-      })),
-      expires: row.expires,
+      quote: result.quote,
+      status: result.quote.status,
+      message:
+        result.quote.status === 'accepted' ? 'Quote accepted' : 'Quote declined',
     })
   })
 
+  app.get('/api/portal/decisions', auth, (req, res) => {
+    try {
+      const logFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'portal_decisions.json')
+      let log = []
+      if (fs.existsSync(logFile)) log = JSON.parse(fs.readFileSync(logFile, 'utf8')) || []
+      if (!Array.isArray(log)) log = []
+      const uid = req.user.id
+      const mine = log.filter((d) => String(d.userId) === String(uid))
+      const limit = Math.min(200, Number(req.query.limit) || 50)
+      res.json({ ok: true, data: mine.slice(-limit).reverse() })
+    } catch (e) {
+      res.json({ ok: true, data: [] })
+    }
+  })
+
+  /** Original hosted API */
+  app.get('/api/portal/:token', (req, res) => {
+    // Avoid capturing /view /decisions /list as tokens
+    const t = req.params.token
+    if (['view', 'decisions', 'list', 'create', 'revoke', 'quote-decision', 'register'].includes(t)) {
+      return res.status(404).json({ error: 'Not found' })
+    }
+    const resolved = resolveToken(t)
+    if (resolved.error) return res.status(resolved.status || 404).json({ error: resolved.error })
+    res.json(portalPayload(resolved.token, resolved.row))
+  })
+
   app.post('/api/portal/:token/quote/:quoteId/decision', (req, res) => {
-    portals = loadPortals()
-    const row = portals[req.params.token]
-    if (!row) return res.status(404).json({ error: 'Invalid portal link' })
-    if (row.expires && new Date(row.expires) < new Date()) {
-      return res.status(410).json({ error: 'Portal link expired' })
+    const result = applyDecision(
+      req.params.token,
+      req.params.quoteId,
+      req.body?.decision || req.body?.action,
+      req.body?.reason || req.body?.note || '',
+    )
+    if (result.error) {
+      return res.status(result.status || 400).json({ error: result.error })
     }
-    const decision = String(req.body?.decision || '').toLowerCase()
-    if (!['approved', 'rejected'].includes(decision)) {
-      return res.status(400).json({ error: 'decision must be approved or rejected' })
-    }
-    const reason = String(req.body?.reason || '').slice(0, 500)
-    const ws = ownerWorkspace(row.userId)
-    if (!ws?.data) return res.status(400).json({ error: 'Workspace missing' })
-    const quotes = ws.data.quotes || []
-    const idx = quotes.findIndex((q) => String(q.id) === String(req.params.quoteId))
-    if (idx < 0) return res.status(404).json({ error: 'Quote not found' })
-    const q = quotes[idx]
-    if (String(q.clientId) !== String(row.clientId)) {
-      return res.status(403).json({ error: 'Quote not in this portal' })
-    }
-    const ts = new Date().toISOString()
-    quotes[idx] = {
-      ...q,
-      status: decision === 'approved' ? 'accepted' : 'rejected',
-      portalDecision: decision,
-      portalDecisionAt: ts,
-      portalDecisionReason: reason || null,
-    }
-    ws.data.quotes = quotes
-    ws.version = (ws.version || 0) + 1
-    ws.updated_at = ts
-    if (typeof persistWorkspaces === 'function') persistWorkspaces()
-    res.json({ ok: true, quote: quotes[idx] })
+    res.json({ ok: true, quote: result.quote })
   })
 
   app.post('/api/portal/:token/feedback', (req, res) => {
@@ -177,7 +327,10 @@ function mountPortal(app, ctx) {
       return res.status(404).json({ error: 'Invoice not found' })
     }
     const settings = data.settings || {}
-    const company = data.company && !Array.isArray(data.company) ? data.company : (data.company && data.company[0]) || {}
+    const company =
+      data.company && !Array.isArray(data.company)
+        ? data.company
+        : (data.company && data.company[0]) || {}
     const merchantId = process.env.PAYFAST_MERCHANT_ID || settings.payfastMerchantId || ''
     const merchantKey = process.env.PAYFAST_MERCHANT_KEY || settings.payfastMerchantKey || ''
     const passphrase = process.env.PAYFAST_PASSPHRASE || settings.payfastPassphrase || ''
@@ -190,7 +343,8 @@ function mountPortal(app, ctx) {
         configured: false,
         amount,
         number: inv.number,
-        message: 'PayFast not configured. Pay via EFT using company banking details, or ask the shop to enable PayFast.',
+        message:
+          'PayFast not configured. Pay via EFT using company banking details, or ask the shop to enable PayFast.',
         company: { name: company.name, email: company.email, phone: company.phone },
       })
     }
@@ -314,7 +468,7 @@ input[type=range]{width:100%}
     res.type('html').send(html)
   })
 
-  console.log('[portal] quotes · PayFast · invoices · NPS feedback')
+  console.log('[portal] SPA aliases · quotes · PayFast · invoices · NPS · git persist')
 }
 
 module.exports = { mountPortal }
