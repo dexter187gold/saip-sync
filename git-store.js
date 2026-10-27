@@ -34,6 +34,7 @@ const DATA_JSON_FILES = [
   'portals.json',
   'portal_decisions.json',
   'client_portal_accounts.json',
+  'support-tickets.json',
 ]
 
 const meta = {
@@ -64,7 +65,7 @@ function ensureDataFiles(DATA_DIR) {
     const f = path.join(DATA_DIR, name)
     if (!fs.existsSync(f)) {
       try {
-        const empty = name.includes('portal') && !name.includes('decision') && !name.includes('accounts') ? '{}\n' : name.includes('decision') ? '[]\n' : '{}\n'
+        const empty = name.includes('support-tickets') || name.includes('decision') ? '[]\n' : name.includes('portal') && !name.includes('accounts') ? '{}\n' : '{}\n'
         fs.writeFileSync(f, empty, 'utf8')
       } catch {}
     }
