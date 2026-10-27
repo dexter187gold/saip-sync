@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro Sync v6.12.0 — portal · git data · WA Cloud scaffold
+ * SA Invoice Pro Sync v6.13.0 — portal · client login · git data · WA Cloud scaffold
  */
 require('dotenv').config()
 const express = require('express')
@@ -53,7 +53,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.12.0'
+const VERSION = '6.13.0'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -283,11 +283,12 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.12.0 · portal · git · WA cloud scaffold',
-    features: ['cloud_auth', 'auth_recover', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'payfast_itn', 'admin_console', 'wa_cloud_scaffold'],
+    codename: '6.13.0 · client portal login · git · WA cloud',
+    features: ['cloud_auth', 'auth_recover', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'client_portal_login', 'payfast_itn', 'admin_console', 'wa_cloud_scaffold'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
     ready: PUBLIC_BASE + '/ready',
+    clientPortal: PUBLIC_BASE + '/api/client-portal/health',
     git: { enabled: GIT_ENABLED },
   })
 })
@@ -321,10 +322,10 @@ app.post('/api/admin/git-flush', (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./authRecover', './payfastItn', './portal', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows']) {
+for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows']) {
   try {
     const mod = require(name)
-    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
+    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountClientPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
     if (typeof fn === 'function') {
       try {
         fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
