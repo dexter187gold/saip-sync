@@ -60,6 +60,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true })
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json')
 const RESET_FILE = path.join(DATA_DIR, 'password_resets.json')
+const SUPPORT_FILE = path.join(DATA_DIR, 'support-tickets.json')
 
 const git = createGitStore(DATA_DIR)
 const gitMeta = git.meta
@@ -89,17 +90,20 @@ function saveJson(file, obj) {
 let users = {}
 let workspaces = {}
 let passwordResets = {}
+let supportTickets = []
 
 function reloadFromDisk() {
   const u = loadJson(USERS_FILE, {})
   const w = loadJson(WORKSPACES_FILE, {})
   const r = loadJson(RESET_FILE, {})
+  const s = loadJson(SUPPORT_FILE, [])
   for (const k of Object.keys(users)) delete users[k]
   Object.assign(users, u)
   for (const k of Object.keys(workspaces)) delete workspaces[k]
   Object.assign(workspaces, w)
   for (const k of Object.keys(passwordResets)) delete passwordResets[k]
   Object.assign(passwordResets, r)
+  supportTickets.splice(0, supportTickets.length, ...(Array.isArray(s) ? s : []))
 }
 function persistUsers() {
   saveJson(USERS_FILE, users)
@@ -112,6 +116,21 @@ function persistWorkspaces() {
 function persistResets() {
   saveJson(RESET_FILE, passwordResets)
   git.schedulePush('resets')
+}
+function persistSupportTickets() {
+  saveJson(SUPPORT_FILE, supportTickets)
+  git.schedulePush('support-tickets')
+}
+function currentUser(req) {
+  return Object.values(users).find((u) => u.id === req.user?.id) || null
+}
+function requireSupportAdmin(req, res) {
+  const actor = currentUser(req)
+  if (!actor || actor.role !== 'admin') {
+    res.status(403).json({ error: 'Administrator access required' })
+    return null
+  }
+  return actor
 }
 function now() {
   return new Date().toISOString()
@@ -272,6 +291,61 @@ app.put('/api/workspace', auth, (req, res) => {
   workspaces[ownerId] = { data, version: newVersion, updated_at: ts }
   persistWorkspaces()
   res.json({ ok: true, version: newVersion, updated_at: ts, ownerId, shared: ownerId !== req.user.id })
+})
+
+app.get('/api/support/tickets', auth, (req, res) => {
+  const rows = supportTickets.filter((t) => t.userId === req.user.id).slice(0, 100)
+  res.json({ ok: true, tickets: rows })
+})
+
+app.post('/api/support/tickets', auth, loginRateLimit, (req, res) => {
+  const subject = String(req.body?.subject || '').trim().slice(0, 120)
+  const details = String(req.body?.details || '').trim().slice(0, 4000)
+  const category = String(req.body?.category || 'Other').trim().slice(0, 40)
+  const allowedCategories = ['Sync or data mismatch', 'Invoice or PDF issue', 'Sign-in or account issue', 'Payments or calculations', 'Bug or unexpected behaviour', 'Privacy or data request', 'Other']
+  if (subject.length < 4) return res.status(400).json({ error: 'Subject must be at least 4 characters' })
+  if (details.length < 10) return res.status(400).json({ error: 'Please describe the issue in at least 10 characters' })
+  const actor = currentUser(req)
+  if (!actor) return res.status(401).json({ error: 'Account no longer exists' })
+  const id = uuidv4()
+  const ticket = {
+    id,
+    number: 'SAIP-' + new Date().getUTCFullYear() + '-' + id.slice(0, 6).toUpperCase(),
+    userId: actor.id,
+    userEmail: actor.email,
+    subject,
+    details,
+    category: allowedCategories.includes(category) ? category : 'Other',
+    status: 'open',
+    createdAt: now(),
+    updatedAt: now(),
+    replies: [],
+  }
+  supportTickets.unshift(ticket)
+  persistSupportTickets()
+  res.status(201).json({ ok: true, ticket: { id: ticket.id, number: ticket.number, subject: ticket.subject, category: ticket.category, status: ticket.status, createdAt: ticket.createdAt } })
+})
+
+app.get('/api/admin/support/tickets', auth, (req, res) => {
+  if (!requireSupportAdmin(req, res)) return
+  const status = String(req.query.status || '').trim()
+  const rows = supportTickets.filter((t) => !status || t.status === status).slice(0, 200)
+  res.json({ ok: true, tickets: rows })
+})
+
+app.patch('/api/admin/support/tickets/:id', auth, (req, res) => {
+  if (!requireSupportAdmin(req, res)) return
+  const ticket = supportTickets.find((t) => t.id === req.params.id || t.number === req.params.id)
+  if (!ticket) return res.status(404).json({ error: 'Support ticket not found' })
+  const allowedStatuses = ['open', 'in_progress', 'waiting', 'resolved', 'closed']
+  const status = req.body?.status == null ? null : String(req.body.status)
+  const reply = String(req.body?.reply || '').trim().slice(0, 4000)
+  if (status && !allowedStatuses.includes(status)) return res.status(400).json({ error: 'Invalid ticket status' })
+  if (status) ticket.status = status
+  if (reply) ticket.replies.push({ id: uuidv4(), author: currentUser(req)?.email || 'Support', body: reply, createdAt: now() })
+  ticket.updatedAt = now()
+  persistSupportTickets()
+  res.json({ ok: true, ticket })
 })
 
 app.get('/api/workspace/history', auth, (req, res) => res.json({ ok: true, history: [] }))
