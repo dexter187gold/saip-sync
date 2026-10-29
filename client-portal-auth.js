@@ -78,6 +78,85 @@ function mountClientPortal(app, ctx) {
     })
   }
 
+  function auditPortal(ownerId, action, email, details = {}) {
+    try {
+      const file = path.join(DATA_DIR, 'client_portal_audit.json')
+      let rows = []
+      try { rows = JSON.parse(fs.readFileSync(file, 'utf8')) } catch {}
+      rows.unshift({ at: now(), ownerId, action, email, ...details })
+      const tmp = file + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(rows.slice(0, 1000), null, 2), 'utf8')
+      fs.renameSync(tmp, file)
+    } catch (err) {
+      console.warn('[client-portal] audit write failed', err.message)
+    }
+  }
+
+  function safeAccountSummary(acc) {
+    return {
+      email: acc.email,
+      name: acc.name,
+      clientId: acc.clientId,
+      active: acc.active !== false,
+      createdAt: acc.createdAt || null,
+      updatedAt: acc.updatedAt || null,
+      lastLoginAt: acc.lastLoginAt || null,
+      counts: {
+        invoices: Array.isArray(acc.snapshot?.invoices) ? acc.snapshot.invoices.length : 0,
+        quotes: Array.isArray(acc.snapshot?.quotes) ? acc.snapshot.quotes.length : 0,
+        tickets: Array.isArray(acc.snapshot?.tickets) ? acc.snapshot.tickets.length : 0,
+        payments: Array.isArray(acc.snapshot?.payments) ? acc.snapshot.payments.length : 0,
+      },
+    }
+  }
+
+  // Workspace-owner console: list only this owner's portal accounts and never
+  // return PIN hashes, JWTs, or the underlying customer financial snapshots.
+  app.get('/api/client-portal/accounts', auth, (req, res) => {
+    const ownerId = req.user.id
+    const accounts = loadAccounts()
+    const rows = Object.values(accounts)
+      .filter((acc) => acc.workspaceOwnerId === ownerId)
+      .map(safeAccountSummary)
+      .sort((a, b) => String(a.email).localeCompare(String(b.email)))
+    res.json({ ok: true, accounts: rows })
+  })
+
+  app.patch('/api/client-portal/accounts/:email/status', auth, (req, res) => {
+    const ownerId = req.user.id
+    const email = safeEmail(req.params?.email)
+    if (!email) return res.status(400).json({ error: 'Valid client email required' })
+    if (typeof req.body?.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' })
+    const accounts = loadAccounts()
+    const key = accountKey(ownerId, email)
+    const acc = accounts[key]
+    if (!acc) return res.status(404).json({ error: 'Portal account not found in this workspace' })
+    acc.active = req.body.active
+    acc.updatedAt = now()
+    accounts[key] = acc
+    saveAccounts(accounts)
+    auditPortal(ownerId, req.body.active ? 'client_portal.account_enabled' : 'client_portal.account_disabled', email)
+    res.json({ ok: true, account: safeAccountSummary(acc) })
+  })
+
+  app.post('/api/client-portal/accounts/:email/reset-pin', auth, (req, res) => {
+    const ownerId = req.user.id
+    const email = safeEmail(req.params?.email)
+    if (!email) return res.status(400).json({ error: 'Valid client email required' })
+    const accounts = loadAccounts()
+    const key = accountKey(ownerId, email)
+    const acc = accounts[key]
+    if (!acc) return res.status(404).json({ error: 'Portal account not found in this workspace' })
+    const pin = genPin()
+    acc.pin_hash = bcrypt.hashSync(pin, 10)
+    acc.updatedAt = now()
+    accounts[key] = acc
+    saveAccounts(accounts)
+    auditPortal(ownerId, 'client_portal.pin_reset', email)
+    // The replacement PIN is returned once so the owner can securely share it.
+    res.json({ ok: true, email, pin, message: 'Replacement PIN generated. Share it with the client through a trusted channel.' })
+  })
+
   /** Shop issues / refreshes portal login for one client */
   app.post('/api/client-portal/issue', auth, (req, res) => {
     const body = req.body || {}

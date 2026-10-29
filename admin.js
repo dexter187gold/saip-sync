@@ -87,18 +87,24 @@ function mountAdmin(app, ctx) {
   app.post('/api/admin/users/:id/reset-password', adminAuth, (req, res) => {
     const user = Object.values(users).find((u) => u.id === req.params.id)
     if (!user) return res.status(404).json({ error: 'Not found' })
-    const pw = req.body?.password || 'ChangeMe1!'
-    user.password_hash = bcrypt.hashSync(pw, 10)
+    const pw = String(req.body?.password || '')
+    if (pw.length < 12) return res.status(400).json({ error: 'Provide a new password of at least 12 characters' })
+    user.password_hash = bcrypt.hashSync(pw, 12)
     user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
     persistUsers()
-    res.json({ ok: true, temporary_password: pw })
+    res.json({ ok: true, message: 'Password reset. Share the new password through a trusted channel; it is not returned by the server.' })
   })
 
   app.patch('/api/admin/users/:id', adminAuth, (req, res) => {
     const user = Object.values(users).find((u) => u.id === req.params.id)
     if (!user) return res.status(404).json({ error: 'Not found' })
-    if (req.body?.role) user.role = req.body.role
-    if (req.body?.name != null) user.name = req.body.name
+    if (req.body?.role != null) {
+      const role = String(req.body.role).trim().toLowerCase()
+      if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid system role' })
+      if (user.id === req.user.id && role !== 'admin') return res.status(400).json({ error: 'You cannot remove your own admin access here' })
+      user.role = role
+    }
+    if (req.body?.name != null) user.name = String(req.body.name).slice(0, 120)
     user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
     persistUsers()
     res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role } })
