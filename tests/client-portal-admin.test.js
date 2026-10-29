@@ -94,3 +94,17 @@ test('owner can reset portal PIN and server returns it only once', async (t) => 
   assert.equal(r.payload.pin === '123456', false)
   assert.equal('pin_hash' in r.payload, false)
 })
+
+
+test('disabled portal accounts cannot start a new client session', async (t) => {
+  const h = harness(t)
+  const disabled = await h.call('PATCH', '/api/client-portal/accounts/:email/status', {
+    params: { email: 'client@example.com' }, body: { active: false },
+  })
+  assert.equal(disabled.statusCode, 200)
+  const login = await h.call('POST', '/api/client-portal/login', {
+    body: { email: 'client@example.com', pin: '123456' },
+  })
+  assert.equal(login.statusCode, 401)
+  assert.equal(login.payload.ok, undefined)
+})
