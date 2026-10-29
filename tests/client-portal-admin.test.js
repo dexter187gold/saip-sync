@@ -46,17 +46,17 @@ function harness(t) {
     },
     git: null,
   })
-  async function call(method, route, { actorId = 'owner-1', params = {}, body = {} } = {}) {
+  async function call(method, route, { actorId = 'owner-1', clientUser = null, params = {}, body = {} } = {}) {
     const handlers = routes.get(method + ' ' + route)
     assert.ok(handlers, 'registered route ' + method + ' ' + route)
     const handler = handlers[handlers.length - 1]
     let statusCode = 200
     let payload
     const res = { status(code) { statusCode = code; return this }, json(value) { payload = value; return this } }
-    await handler({ user: { id: actorId }, params, body }, res)
+    await handler({ user: { id: actorId }, clientUser, params, body }, res)
     return { statusCode, payload }
   }
-  return { call, dir }
+  return { call, dir, workspaces }
 }
 
 test('owner portal account list is workspace-scoped and excludes secrets/snapshots', async (t) => {
@@ -107,4 +107,34 @@ test('disabled portal accounts cannot start a new client session', async (t) => 
   })
   assert.equal(login.statusCode, 401)
   assert.equal(login.payload.ok, undefined)
+})
+
+
+test('client portal cannot approve or reject another client quote by guessing its ID', async (t) => {
+  const h = harness(t)
+  h.workspaces['owner-1'] = {
+    data: {
+      quotes: [
+        { id: 'own-quote', number: 'Q-001', clientId: 'client-1', status: 'sent' },
+        { id: 'other-quote', number: 'Q-002', clientId: 'client-2', status: 'sent' },
+      ],
+    },
+    version: 1,
+  }
+  const clientUser = {
+    workspaceOwnerId: 'owner-1',
+    email: 'client@example.com',
+    clientId: 'client-1',
+  }
+  const denied = await h.call('POST', '/api/client-portal/quote-decision', {
+    clientUser, body: { quoteId: 'other-quote', decision: 'accepted' },
+  })
+  assert.equal(denied.statusCode, 404)
+  assert.equal(h.workspaces['owner-1'].data.quotes[1].status, 'sent')
+
+  const allowed = await h.call('POST', '/api/client-portal/quote-decision', {
+    clientUser, body: { quoteId: 'own-quote', decision: 'accepted' },
+  })
+  assert.equal(allowed.statusCode, 200)
+  assert.equal(h.workspaces['owner-1'].data.quotes[0].status, 'accepted')
 })
