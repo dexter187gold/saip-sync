@@ -42,7 +42,7 @@ function harness(t) {
     loginRateLimit: (_req, _res, next) => next(),
     safeEmail(value) {
       const email = String(value || '').trim().toLowerCase()
-      return /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email) ? email : null
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? email : null
     },
     git: null,
   })
@@ -88,7 +88,7 @@ test('owner can reset portal PIN and server returns it only once', async (t) => 
     params: { email: 'client@example.com' },
   })
   assert.equal(r.statusCode, 200)
-  assert.match(r.payload.pin, /^\\d{6}$/)
+  assert.match(r.payload.pin, /^\d{6}$/)
   const accounts = JSON.parse(fs.readFileSync(path.join(h.dir, 'client_portal_accounts.json'), 'utf8'))
   assert.equal(bcrypt.compareSync(r.payload.pin, accounts['owner-1::client@example.com'].pin_hash), true)
   assert.equal(r.payload.pin === '123456', false)
