@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
 const { mountClientPortal } = require('../client-portal-auth')
 
 function harness(t) {
@@ -56,7 +57,16 @@ function harness(t) {
     await handler({ user: { id: actorId }, clientUser, params, body }, res)
     return { statusCode, payload }
   }
-  return { call, dir, workspaces }
+  async function authenticateClient(token) {
+    const middleware = routes.get('GET /api/client-portal/me')[0]
+    let statusCode = 200
+    let payload
+    let nextCalled = false
+    const res = { status(code) { statusCode = code; return this }, json(value) { payload = value; return this } }
+    middleware({ headers: { authorization: 'Bearer ' + token } }, res, () => { nextCalled = true })
+    return { statusCode, payload, nextCalled }
+  }
+  return { call, dir, workspaces, authenticateClient }
 }
 
 test('owner portal account list is workspace-scoped and excludes secrets/snapshots', async (t) => {
@@ -137,4 +147,25 @@ test('client portal cannot approve or reject another client quote by guessing it
   })
   assert.equal(allowed.statusCode, 200)
   assert.equal(h.workspaces['owner-1'].data.quotes[0].status, 'accepted')
+})
+
+test('disabling a portal account immediately invalidates its existing client JWT', async (t) => {
+  const h = harness(t)
+  const token = jwt.sign({
+    aud: 'client_portal',
+    workspaceOwnerId: 'owner-1',
+    email: 'client@example.com',
+    clientId: 'client-1',
+  }, 'test-secret-for-client-portal')
+  const before = await h.authenticateClient(token)
+  assert.equal(before.nextCalled, true)
+
+  const disabled = await h.call('PATCH', '/api/client-portal/accounts/:email/status', {
+    params: { email: 'client@example.com' }, body: { active: false },
+  })
+  assert.equal(disabled.statusCode, 200)
+
+  const after = await h.authenticateClient(token)
+  assert.equal(after.statusCode, 401)
+  assert.equal(after.nextCalled, false)
 })
