@@ -116,6 +116,49 @@ function mountTeam(app, ctx) {
     res.json({ ok: true })
   })
 
+  app.post('/api/team/member-role', auth, (req, res) => {
+    const me = userById(req.user.id)
+    if (!me || me.linkedWorkspaceOwnerId) return res.status(403).json({ error: 'Only the workspace owner can change member roles' })
+
+    const member = userById(req.body?.userId)
+    if (!member || member.linkedWorkspaceOwnerId !== me.id) return res.status(404).json({ error: 'Workspace member not found' })
+    if (member.id === me.id) return res.status(400).json({ error: 'Owner role cannot be changed through member management' })
+
+    const allowedRoles = new Set(['admin', 'manager', 'front_desk', 'helpdesk', 'tech', 'accountant', 'viewer'])
+    const role = String(req.body?.role || '').trim().toLowerCase()
+    if (!allowedRoles.has(role)) return res.status(400).json({ error: 'Invalid team role' })
+
+    const previousRole = member.teamRole || 'member'
+    member.teamRole = role
+    member.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
+    if (typeof persistUsers === 'function') persistUsers()
+
+    // Best-effort append-only audit trail; never include passwords or tokens.
+    try {
+      const auditFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'team_audit.json')
+      let events = []
+      try { if (fs.existsSync(auditFile)) events = JSON.parse(fs.readFileSync(auditFile, 'utf8')) } catch {}
+      events.push({
+        action: 'team.member_role_changed',
+        actorId: me.id,
+        actorEmail: me.email,
+        targetId: member.id,
+        targetEmail: member.email,
+        previousRole,
+        newRole: role,
+        at: typeof now === 'function' ? now() : new Date().toISOString(),
+      })
+      fs.mkdirSync(path.dirname(auditFile), { recursive: true })
+      const tmp = auditFile + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(events.slice(-1000), null, 2), 'utf8')
+      fs.renameSync(tmp, auditFile)
+    } catch (e) {
+      console.warn('[team] role audit write failed', e.message)
+    }
+
+    res.json({ ok: true, userId: member.id, role, previousRole })
+  })
+
   app.post('/api/team/remove', auth, (req, res) => {
     const me = userById(req.user.id)
     if (!me || me.linkedWorkspaceOwnerId) return res.status(403).json({ error: 'Owner only' })
