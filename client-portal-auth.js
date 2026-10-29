@@ -59,6 +59,13 @@ function mountClientPortal(app, ctx) {
       if (decoded.aud !== 'client_portal') {
         return res.status(401).json({ error: 'Not a client portal session' })
       }
+      // Re-check account state on every request so disabling an account or
+      // resetting its PIN immediately invalidates previously issued sessions.
+      const accounts = loadAccounts()
+      const acc = accounts[accountKey(decoded.workspaceOwnerId, decoded.email)]
+      if (!acc || acc.active === false || String(acc.clientId) !== String(decoded.clientId)) {
+        return res.status(401).json({ error: 'Client portal session is no longer active' })
+      }
       req.clientUser = decoded
       next()
     } catch {
