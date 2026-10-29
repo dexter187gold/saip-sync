@@ -35,7 +35,7 @@ test('public portal renders valid JavaScript and a bounded loading state', () =>
     // renders a small setup/fallback page instead of the SPA shell.
     assert.match(html, /Open the SPA portal link from the shop/)
     assert.match(html, /set FRONTEND_PUBLIC_URL/)
-    assert.match(html, /href="\\/api\\/portal\\/0123456789abcdef0123456789abcdef0123456789abcdef"/)
+    assert.ok(html.includes('href="/api/portal/0123456789abcdef0123456789abcdef0123456789abcdef"'))
     assert.doesNotMatch(html, /<script>/)
   } finally {
     fs.rmSync(dataDir, { recursive: true, force: true })
