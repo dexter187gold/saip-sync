@@ -59,6 +59,13 @@ function mountClientPortal(app, ctx) {
       if (decoded.aud !== 'client_portal') {
         return res.status(401).json({ error: 'Not a client portal session' })
       }
+      // Re-check account state on every request so disabling an account or
+      // resetting its PIN immediately invalidates previously issued sessions.
+      const accounts = loadAccounts()
+      const acc = accounts[accountKey(decoded.workspaceOwnerId, decoded.email)]
+      if (!acc || acc.active === false || String(acc.clientId) !== String(decoded.clientId)) {
+        return res.status(401).json({ error: 'Client portal session is no longer active' })
+      }
       req.clientUser = decoded
       next()
     } catch {
@@ -386,20 +393,34 @@ function mountClientPortal(app, ctx) {
     const acc = accounts[key]
     if (!acc) return res.status(404).json({ error: 'Account not found' })
 
-    // Update snapshot quote status
-    if (acc.snapshot && Array.isArray(acc.snapshot.quotes)) {
-      acc.snapshot.quotes = acc.snapshot.quotes.map((q) =>
-        q.id === quoteId || q.number === quoteId ? { ...q, status, portalDecidedAt: now() } : q,
-      )
+    // A client may decide only a quote explicitly linked to their own client
+    // record. Never trust a quote ID/number alone: IDs can be guessed or shared.
+    const belongsToAccount = (quote) => {
+      if (!quote) return false
+      if (String(quote.clientId ?? quote.client_id ?? '') === String(acc.clientId)) return true
+      const quoteEmail = String(quote.clientEmail || quote.email || '').toLowerCase().trim()
+      return !!quoteEmail && quoteEmail === String(acc.email || '').toLowerCase().trim()
     }
-    // Update workspace quote if present
+    const matchesQuote = (quote) => String(quote.id) === String(quoteId) || String(quote.number) === String(quoteId)
     const ws = workspaces[acc.workspaceOwnerId]
-    if (ws && ws.data && Array.isArray(ws.data.quotes)) {
-      ws.data.quotes = ws.data.quotes.map((q) =>
-        q.id === quoteId || q.number === quoteId ? { ...q, status, portalDecidedAt: now() } : q,
-      )
+    const workspaceQuotes = ws?.data && Array.isArray(ws.data.quotes) ? ws.data.quotes : null
+    const snapshotQuotes = Array.isArray(acc.snapshot?.quotes) ? acc.snapshot.quotes : []
+    const sourceQuotes = workspaceQuotes || snapshotQuotes
+    const target = sourceQuotes.find(matchesQuote)
+    if (!target || !belongsToAccount(target)) {
+      return res.status(404).json({ error: 'Quote not found' })
+    }
+
+    const updateOwnedQuote = (quotes) => quotes.map((q) =>
+      matchesQuote(q) && belongsToAccount(q) ? { ...q, status, portalDecidedAt: now() } : q,
+    )
+    if (workspaceQuotes) {
+      ws.data.quotes = updateOwnedQuote(workspaceQuotes)
       workspaces[acc.workspaceOwnerId] = ws
       if (typeof ctx.persistWorkspaces === 'function') ctx.persistWorkspaces()
+    }
+    if (Array.isArray(acc.snapshot?.quotes)) {
+      acc.snapshot.quotes = updateOwnedQuote(acc.snapshot.quotes)
     }
     acc.updatedAt = now()
     accounts[key] = acc

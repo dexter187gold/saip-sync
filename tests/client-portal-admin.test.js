@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
 const { mountClientPortal } = require('../client-portal-auth')
 
 function harness(t) {
@@ -46,17 +47,26 @@ function harness(t) {
     },
     git: null,
   })
-  async function call(method, route, { actorId = 'owner-1', params = {}, body = {} } = {}) {
+  async function call(method, route, { actorId = 'owner-1', clientUser = null, params = {}, body = {} } = {}) {
     const handlers = routes.get(method + ' ' + route)
     assert.ok(handlers, 'registered route ' + method + ' ' + route)
     const handler = handlers[handlers.length - 1]
     let statusCode = 200
     let payload
     const res = { status(code) { statusCode = code; return this }, json(value) { payload = value; return this } }
-    await handler({ user: { id: actorId }, params, body }, res)
+    await handler({ user: { id: actorId }, clientUser, params, body }, res)
     return { statusCode, payload }
   }
-  return { call, dir }
+  async function authenticateClient(token) {
+    const middleware = routes.get('GET /api/client-portal/me')[0]
+    let statusCode = 200
+    let payload
+    let nextCalled = false
+    const res = { status(code) { statusCode = code; return this }, json(value) { payload = value; return this } }
+    middleware({ headers: { authorization: 'Bearer ' + token } }, res, () => { nextCalled = true })
+    return { statusCode, payload, nextCalled }
+  }
+  return { call, dir, workspaces, authenticateClient }
 }
 
 test('owner portal account list is workspace-scoped and excludes secrets/snapshots', async (t) => {
@@ -107,4 +117,55 @@ test('disabled portal accounts cannot start a new client session', async (t) => 
   })
   assert.equal(login.statusCode, 401)
   assert.equal(login.payload.ok, undefined)
+})
+
+
+test('client portal cannot approve or reject another client quote by guessing its ID', async (t) => {
+  const h = harness(t)
+  h.workspaces['owner-1'] = {
+    data: {
+      quotes: [
+        { id: 'own-quote', number: 'Q-001', clientId: 'client-1', status: 'sent' },
+        { id: 'other-quote', number: 'Q-002', clientId: 'client-2', status: 'sent' },
+      ],
+    },
+    version: 1,
+  }
+  const clientUser = {
+    workspaceOwnerId: 'owner-1',
+    email: 'client@example.com',
+    clientId: 'client-1',
+  }
+  const denied = await h.call('POST', '/api/client-portal/quote-decision', {
+    clientUser, body: { quoteId: 'other-quote', decision: 'accepted' },
+  })
+  assert.equal(denied.statusCode, 404)
+  assert.equal(h.workspaces['owner-1'].data.quotes[1].status, 'sent')
+
+  const allowed = await h.call('POST', '/api/client-portal/quote-decision', {
+    clientUser, body: { quoteId: 'own-quote', decision: 'accepted' },
+  })
+  assert.equal(allowed.statusCode, 200)
+  assert.equal(h.workspaces['owner-1'].data.quotes[0].status, 'accepted')
+})
+
+test('disabling a portal account immediately invalidates its existing client JWT', async (t) => {
+  const h = harness(t)
+  const token = jwt.sign({
+    aud: 'client_portal',
+    workspaceOwnerId: 'owner-1',
+    email: 'client@example.com',
+    clientId: 'client-1',
+  }, 'test-secret-for-client-portal')
+  const before = await h.authenticateClient(token)
+  assert.equal(before.nextCalled, true)
+
+  const disabled = await h.call('PATCH', '/api/client-portal/accounts/:email/status', {
+    params: { email: 'client@example.com' }, body: { active: false },
+  })
+  assert.equal(disabled.statusCode, 200)
+
+  const after = await h.authenticateClient(token)
+  assert.equal(after.statusCode, 401)
+  assert.equal(after.nextCalled, false)
 })
