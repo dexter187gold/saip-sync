@@ -91,10 +91,16 @@ function mountWorkspaceReset(app, ctx) {
     const confirmPin = String(req.body?.confirmPin || '')
     if (!/^\d{6,12}$/.test(pin)) return res.status(400).json({ error: 'Recovery PIN must be 6–12 digits' })
     if (pin !== confirmPin) return res.status(400).json({ error: 'PIN entries do not match' })
-    actor.workspaceResetPinHash = bcrypt.hashSync(pin, 12)
-    actor.workspaceResetPinUpdatedAt = timestamp()
-    const nextUsers = { ...users, [actor.email]: actor }
-    commitFiles({ users: nextUsers })
+    const updatedActor = {
+      ...actor,
+      workspaceResetPinHash: bcrypt.hashSync(pin, 12),
+      workspaceResetPinUpdatedAt: timestamp(),
+    }
+    const nextUsers = { ...users, [actor.email]: updatedActor }
+    try { commitFiles({ users: nextUsers }) } catch (error) {
+      return res.status(500).json({ error: 'Reset PIN could not be saved. No account changes were applied.' })
+    }
+    Object.assign(actor, updatedActor)
     Object.assign(users, nextUsers)
     push('workspace-reset-pin')
     res.json({ ok: true, message: 'Workspace reset PIN saved. It is never returned by the server.' })
@@ -223,6 +229,7 @@ function mountWorkspaceReset(app, ctx) {
     Object.assign(users, nextUsers)
     for (const key of Object.keys(workspaces)) delete workspaces[key]
     Object.assign(workspaces, nextWorkspaces)
+    global.__saip_portals = nextQuotePortals
     push('workspace-reset')
 
     res.json({
