@@ -91,7 +91,7 @@ test('reset PIN requires 6–12 digits and confirmation', async (t) => {
   const h = harness(t)
   assert.equal((await h.call('/api/workspace/reset-pin', { pin: '1234', confirmPin: '1234', currentPassword: 'owner-password' })).statusCode, 400)
   assert.equal((await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '654321', currentPassword: 'owner-password' })).statusCode, 400)
-  const saved = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456' })
+  const saved = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456', currentPassword: 'owner-password' })
   assert.equal(saved.statusCode, 200)
   assert.equal(saved.payload.ok, true)
   assert.ok(h.users['owner@example.com'].workspaceResetPinHash)
