@@ -396,10 +396,10 @@ app.post('/api/admin/git-flush', (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows']) {
+for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows', './workspace-reset']) {
   try {
     const mod = require(name)
-    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountClientPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mount
+    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountClientPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mountWorkspaceReset || mod.mount
     if (typeof fn === 'function') {
       try {
         fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
