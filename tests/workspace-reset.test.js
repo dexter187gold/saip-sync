@@ -78,8 +78,7 @@ test('reset PIN requires 6–12 digits and confirmation', async (t) => {
   const saved = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456' })
   assert.equal(saved.statusCode, 200)
   assert.equal(saved.payload.ok, true)
-  assert.equal(h.users['owner@example.com'].workspaceResetPinHash, undefined)
-  assert.ok(h.users['owner@example.com'].workspaceResetPinHash === undefined) // hash is persisted on the owner object only after save
+  assert.ok(h.users['owner@example.com'].workspaceResetPinHash)
   const diskUsers = JSON.parse(fs.readFileSync(path.join(h.dir, 'users.json'), 'utf8'))
   assert.ok(diskUsers['owner@example.com'].workspaceResetPinHash)
 })
