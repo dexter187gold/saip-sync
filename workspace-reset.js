@@ -87,7 +87,7 @@ function mountWorkspaceReset(app, ctx) {
     if (!actor) return
     const pin = String(req.body?.pin || '')
     const confirmPin = String(req.body?.confirmPin || '')
-    if (!/^\\d{6,12}$/.test(pin)) return res.status(400).json({ error: 'Recovery PIN must be 6–12 digits' })
+    if (!/^\d{6,12}$/.test(pin)) return res.status(400).json({ error: 'Recovery PIN must be 6–12 digits' })
     if (pin !== confirmPin) return res.status(400).json({ error: 'PIN entries do not match' })
     actor.workspaceResetPinHash = bcrypt.hashSync(pin, 12)
     actor.workspaceResetPinUpdatedAt = timestamp()
@@ -102,7 +102,7 @@ function mountWorkspaceReset(app, ctx) {
     const actor = owner(req, res)
     if (!actor) return
     const pin = String(req.body?.pin || '')
-    if (!/^\\d{6,12}$/.test(pin)) return res.status(400).json({ error: 'Enter the 6–12 digit recovery PIN' })
+    if (!/^\d{6,12}$/.test(pin)) return res.status(400).json({ error: 'Enter the 6–12 digit recovery PIN' })
     if (!actor.workspaceResetPinHash) return res.status(409).json({ error: 'Set a workspace reset PIN before continuing' })
     let pinOk = false
     try { pinOk = bcrypt.compareSync(pin, actor.workspaceResetPinHash) } catch {}
