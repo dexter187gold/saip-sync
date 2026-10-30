@@ -1,6 +1,7 @@
 (function () {
   var token = localStorage.getItem("saip_admin_token") || "";
   var currentTab = "dash";
+  var usersCache = [];
 
   function toast(m) {
     var el = document.getElementById("toast");
@@ -15,7 +16,7 @@
   }
   function esc(s) {
     return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      .replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">").replace(/"/g, """);
   }
   function money(n) {
     var x = Number(n) || 0;
@@ -36,7 +37,7 @@
 
   var TITLES = {
     dash: ["Dashboard", "Users & workspaces"],
-    users: ["Users", "Cloud accounts"],
+    users: ["Users", "Add · role · reset password · remove"],
     invoices: ["Invoices", "All workspaces"],
     tickets: ["Tickets", "All workspaces"],
     clients: ["Clients", "All workspaces"],
@@ -120,14 +121,129 @@
 
   function loadUsers() {
     return fetchJson("/api/admin/users").then(function (d) {
-      var users = d.users || [];
-      var rows = users.map(function (u) {
-        return "<tr><td>" + esc(u.email) + "</td><td>" + esc(u.role) + "</td><td>" +
-          (u.has_workspace ? "yes" : "no") + "</td><td>" + (u.google ? "Google" : "—") + "</td></tr>";
-      }).join("");
-      document.getElementById("panel-users").innerHTML =
-        "<table><thead><tr><th>Email</th><th>Role</th><th>WS</th><th>Auth</th></tr></thead><tbody>" +
-        (rows || "<tr><td colspan=4>None</td></tr>") + "</tbody></table>";
+      usersCache = d.users || [];
+      renderUsersPanel();
+    });
+  }
+
+  function renderUsersPanel() {
+    var users = usersCache;
+    var rows = users.map(function (u) {
+      var roleOpts = ['user', 'admin'].map(function (r) {
+        return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + r + '</option>';
+      }).join('');
+      return (
+        '<tr data-id="' + esc(u.id) + '">' +
+        '<td><strong>' + esc(u.email) + '</strong><br><span style="font-size:12px;color:var(--muted)">' + esc(u.name || '—') + '</span></td>' +
+        '<td><select class="input role-sel" data-id="' + esc(u.id) + '" style="min-width:90px;padding:6px 8px">' + roleOpts + '</select></td>' +
+        '<td>' + (u.has_workspace ? 'yes' : 'no') + '</td>' +
+        '<td>' + (u.google ? 'Google' : '—') + '</td>' +
+        '<td style="white-space:nowrap">' +
+        '<button type="button" class="btn btn-outline btn-sm btn-reset" data-id="' + esc(u.id) + '" data-email="' + esc(u.email) + '" style="margin-right:4px">Reset PW</button>' +
+        '<button type="button" class="btn btn-outline btn-sm btn-del" data-id="' + esc(u.id) + '" data-email="' + esc(u.email) + '" data-role="' + esc(u.role) + '" style="color:var(--danger)">Remove</button>' +
+        '</td></tr>'
+      );
+    }).join('');
+
+    var html =
+      '<div class="card" style="margin-bottom:14px">' +
+      '<h3 style="margin:0 0 10px;font-size:1rem">Add cloud user</h3>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;align-items:end">' +
+      '<div><label style="font-size:12px;color:var(--muted)">Email</label><input id="nu-email" class="input" type="email" placeholder="tech@shop.co.za"/></div>' +
+      '<div><label style="font-size:12px;color:var(--muted)">Name</label><input id="nu-name" class="input" type="text" placeholder="Optional"/></div>' +
+      '<div><label style="font-size:12px;color:var(--muted)">Password (≥12 chars)</label><input id="nu-pw" class="input" type="password" autocomplete="new-password"/></div>' +
+      '<div><label style="font-size:12px;color:var(--muted)">Role</label><select id="nu-role" class="input"><option value="user">user</option><option value="admin">admin</option></select></div>' +
+      '<div><label style="font-size:12px;display:flex;gap:6px;align-items:center"><input id="nu-ws" type="checkbox" checked/> Create workspace</label>' +
+      '<button type="button" class="btn" id="btn-create-user" style="width:100%;margin-top:6px">Create user</button></div>' +
+      '</div>' +
+      '<p style="font-size:12px;color:var(--muted);margin:10px 0 0">Password is never shown after create. Share it out-of-band. Workspace holds invoices/tickets for that account.</p>' +
+      '</div>' +
+      '<div class="card"><strong>' + users.length + '</strong> accounts</div>' +
+      '<table><thead><tr><th>Email / Name</th><th>Role</th><th>WS</th><th>Auth</th><th>Actions</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="5">None</td></tr>') +
+      '</tbody></table>';
+
+    var panel = document.getElementById("panel-users");
+    panel.innerHTML = html;
+
+    var createBtn = document.getElementById("btn-create-user");
+    if (createBtn) {
+      createBtn.addEventListener("click", function () {
+        var email = (document.getElementById("nu-email").value || "").trim();
+        var name = (document.getElementById("nu-name").value || "").trim();
+        var password = document.getElementById("nu-pw").value || "";
+        var role = document.getElementById("nu-role").value || "user";
+        var createWorkspace = document.getElementById("nu-ws").checked;
+        if (!email) return toast("Email required");
+        if (password.length < 12) return toast("Password must be at least 12 characters");
+        createBtn.disabled = true;
+        createBtn.textContent = "Creating…";
+        fetchJson("/api/admin/users", {
+          method: "POST",
+          body: JSON.stringify({ email: email, name: name || null, password: password, role: role, createWorkspace: createWorkspace })
+        })
+          .then(function () {
+            toast("User created");
+            document.getElementById("nu-email").value = "";
+            document.getElementById("nu-name").value = "";
+            document.getElementById("nu-pw").value = "";
+            return loadUsers();
+          })
+          .catch(function (e) { toast(e.message || "Create failed"); })
+          .finally(function () {
+            createBtn.disabled = false;
+            createBtn.textContent = "Create user";
+          });
+      });
+    }
+
+    panel.querySelectorAll(".role-sel").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        var id = sel.getAttribute("data-id");
+        var role = sel.value;
+        if (!window.confirm("Change role to " + role + "?")) {
+          loadUsers();
+          return;
+        }
+        fetchJson("/api/admin/users/" + encodeURIComponent(id), {
+          method: "PATCH",
+          body: JSON.stringify({ role: role })
+        })
+          .then(function () { toast("Role updated"); return loadUsers(); })
+          .catch(function (e) { toast(e.message); loadUsers(); });
+      });
+    });
+
+    panel.querySelectorAll(".btn-reset").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-id");
+        var email = btn.getAttribute("data-email");
+        var pw = window.prompt("New password for " + email + " (min 12 characters):");
+        if (pw == null) return;
+        if (pw.length < 12) return toast("Password must be at least 12 characters");
+        fetchJson("/api/admin/users/" + encodeURIComponent(id) + "/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ password: pw })
+        })
+          .then(function () { toast("Password reset — share new password securely"); })
+          .catch(function (e) { toast(e.message); });
+      });
+    });
+
+    panel.querySelectorAll(".btn-del").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-id");
+        var email = btn.getAttribute("data-email");
+        var role = btn.getAttribute("data-role");
+        if (role === "admin") {
+          toast("Demote admin to user first, then remove");
+          return;
+        }
+        if (!window.confirm("Permanently delete " + email + " and their workspace? This cannot be undone.")) return;
+        fetchJson("/api/admin/users/" + encodeURIComponent(id), { method: "DELETE" })
+          .then(function () { toast("User removed"); return loadUsers(); })
+          .catch(function (e) { toast(e.message); });
+      });
     });
   }
 
@@ -140,7 +256,7 @@
           "</td><td>" + esc(i.owner_email || "") + "</td></tr>";
       }).join("");
       document.getElementById("panel-invoices").innerHTML =
-        "<div class=\"card\"><strong>" + list.length + "</strong> invoices</div>" +
+        '<div class="card"><strong>' + list.length + "</strong> invoices</div>" +
         "<table><thead><tr><th>#</th><th>Client</th><th>Bal</th><th>Status</th><th>Owner</th></tr></thead><tbody>" +
         (rows || "<tr><td colspan=5>None</td></tr>") + "</tbody></table>";
     });
@@ -180,7 +296,7 @@
           esc(x.ip || "") + "</td><td>" + esc((x.lastSeen || x.boundAt || "").slice(0, 19)) + "</td></tr>";
       }).join("");
       document.getElementById("panel-devices").innerHTML =
-        "<div class=\"card\"><strong>" + list.length + "</strong> bound devices</div>" +
+        '<div class="card"><strong>' + list.length + "</strong> bound devices</div>" +
         "<table><thead><tr><th>Owner</th><th>Label</th><th>IP</th><th>Seen</th></tr></thead><tbody>" +
         (rows || "<tr><td colspan=4>None yet</td></tr>") + "</tbody></table>";
     });
@@ -194,7 +310,7 @@
           esc((x.expires || "").slice(0, 10)) + '</td><td><a href="' + esc(x.url || "#") + '" target="_blank" rel="noopener">Open</a></td></tr>';
       }).join("");
       document.getElementById("panel-portals").innerHTML =
-        "<div class=\"card\"><strong>" + list.length + "</strong> portal links</div>" +
+        '<div class="card"><strong>' + list.length + "</strong> portal links</div>" +
         "<table><thead><tr><th>Owner</th><th>Client</th><th>Expires</th><th></th></tr></thead><tbody>" +
         (rows || "<tr><td colspan=4>None</td></tr>") + "</tbody></table>";
     });
@@ -208,7 +324,7 @@
           (x.version || 0) + "</td><td>" + esc((x.updated_at || "").slice(0, 19)) + "</td></tr>";
       }).join("");
       document.getElementById("panel-branches").innerHTML =
-        "<div class=\"card\"><strong>" + list.length + "</strong> branch workspaces</div>" +
+        '<div class="card"><strong>' + list.length + "</strong> branch workspaces</div>" +
         "<table><thead><tr><th>Owner</th><th>Branch</th><th>Ver</th><th>Updated</th></tr></thead><tbody>" +
         (rows || "<tr><td colspan=4>None</td></tr>") + "</tbody></table>";
     });
