@@ -1,10 +1,11 @@
 /**
- * Self-contained mountAdmin — no external admin-seed dependency.
+ * Self-contained mountAdmin — multi-tenant admin API + portal.
  */
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 
 function mountAdmin(app, ctx) {
   const {
@@ -18,6 +19,8 @@ function mountAdmin(app, ctx) {
     now,
     git,
     gitMeta,
+    strongPassword,
+    safeEmail,
   } = ctx
 
   function adminAuth(req, res, next) {
@@ -33,6 +36,11 @@ function mountAdmin(app, ctx) {
     } catch {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
+  }
+
+  function uuid() {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+    return crypto.randomBytes(16).toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5')
   }
 
   app.get('/admin', (_req, res) => {
@@ -78,10 +86,80 @@ function mountAdmin(app, ctx) {
       name: u.name,
       role: u.role,
       created_at: u.created_at,
+      updated_at: u.updated_at,
       has_workspace: !!workspaces[u.id],
       google: !!u.google_id,
+      linkedWorkspaceOwnerId: u.linkedWorkspaceOwnerId || null,
+      teamRole: u.teamRole || null,
     }))
     res.json({ ok: true, users: list })
+  })
+
+  /** Create a new cloud user (admin-only). Optional workspace shell. */
+  app.post('/api/admin/users', adminAuth, (req, res) => {
+    const email = typeof safeEmail === 'function' ? safeEmail(req.body?.email) : String(req.body?.email || '').toLowerCase().trim()
+    if (!email) return res.status(400).json({ error: 'Valid email required' })
+    if (users[email]) return res.status(409).json({ error: 'Email already registered', code: 'email_exists' })
+
+    const password = String(req.body?.password || '')
+    const pwCheck = typeof strongPassword === 'function'
+      ? strongPassword(password)
+      : { ok: password.length >= 8, error: 'Password must be at least 8 characters' }
+    if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error || 'Weak password' })
+
+    const role = String(req.body?.role || 'user').trim().toLowerCase()
+    if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid system role' })
+
+    const name = String(req.body?.name || '').trim().slice(0, 120) || null
+    const id = uuid()
+    const ts = typeof now === 'function' ? now() : new Date().toISOString()
+    users[email] = {
+      id,
+      email,
+      password_hash: bcrypt.hashSync(password, 12),
+      name,
+      role,
+      created_at: ts,
+      updated_at: ts,
+    }
+    const createWorkspace = req.body?.createWorkspace !== false
+    if (createWorkspace) {
+      workspaces[id] = {
+        data: { clients: [], invoices: [], tickets: [], settings: {} },
+        version: 1,
+        updated_at: ts,
+      }
+      persistWorkspaces()
+    }
+    persistUsers()
+
+    try {
+      const DATA_DIR = ctx.DATA_DIR || path.join(__dirname, 'data')
+      const auditFile = path.join(DATA_DIR, 'admin_audit.json')
+      let events = []
+      try { if (fs.existsSync(auditFile)) events = JSON.parse(fs.readFileSync(auditFile, 'utf8')) } catch {}
+      events.push({
+        action: 'admin.user_created',
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        targetId: id,
+        targetEmail: email,
+        role,
+        at: ts,
+      })
+      fs.mkdirSync(path.dirname(auditFile), { recursive: true })
+      const tmp = auditFile + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(events.slice(-2000), null, 2), 'utf8')
+      fs.renameSync(tmp, auditFile)
+    } catch (e) {
+      console.warn('[admin] audit write failed', e.message)
+    }
+
+    res.status(201).json({
+      ok: true,
+      user: { id, email, name, role, has_workspace: !!workspaces[id] },
+      message: 'User created. Share the password through a trusted channel; it is not returned.',
+    })
   })
 
   app.post('/api/admin/users/:id/reset-password', adminAuth, (req, res) => {
@@ -107,18 +185,26 @@ function mountAdmin(app, ctx) {
     if (req.body?.name != null) user.name = String(req.body.name).slice(0, 120)
     user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
     persistUsers()
-    res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role } })
+    res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role, name: user.name } })
   })
 
   app.delete('/api/admin/users/:id', adminAuth, (req, res) => {
     const user = Object.values(users).find((u) => u.id === req.params.id)
     if (!user) return res.status(404).json({ error: 'Not found' })
-    if (user.role === 'admin') return res.status(400).json({ error: 'Cannot delete admin' })
-    delete users[user.email]
-    delete workspaces[user.id]
+    if (user.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own admin account' })
+    if (user.role === 'admin') return res.status(400).json({ error: 'Cannot delete another admin — demote to user first' })
+    const emailKey = user.email
+    delete users[emailKey]
+    for (const k of Object.keys(users)) {
+      if (users[k] && users[k].id === user.id) delete users[k]
+    }
+    if (workspaces[user.id]) delete workspaces[user.id]
+    for (const k of Object.keys(workspaces)) {
+      if (String(k).startsWith(user.id + '::')) delete workspaces[k]
+    }
     persistUsers()
     persistWorkspaces()
-    res.json({ ok: true })
+    res.json({ ok: true, message: 'User and workspace removed' })
   })
 
   app.get('/api/admin/tickets', adminAuth, (req, res) => {
@@ -219,7 +305,7 @@ function mountAdmin(app, ctx) {
     }
   })
 
-  console.log('[admin] multi-tenant admin API mounted')
+  console.log('[admin] multi-tenant admin API mounted (create/delete/patch users)')
 }
 
 module.exports = { mountAdmin }
