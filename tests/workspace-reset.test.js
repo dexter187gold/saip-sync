@@ -26,7 +26,7 @@ function harness(t) {
     'owner-1::client@example.com': { workspaceOwnerId: 'owner-1', email: 'client@example.com' },
     'owner-2::client@example.com': { workspaceOwnerId: 'owner-2', email: 'client@example.com' },
   })
-  seed('team_invites.json', {
+  seed('portals.json', {\n    ownLink: { userId: 'owner-1', clientId: 'c1' },\n    otherLink: { userId: 'owner-2', clientId: 'c2' },\n  })\n  seed('portal_decisions.json', [\n    { id: 'own-decision', userId: 'owner-1' },\n    { id: 'other-decision', userId: 'owner-2' },\n  ])\n  seed('team_invites.json', {
     own: { ownerId: 'owner-1' },
     other: { ownerId: 'owner-2' },
   })
@@ -108,7 +108,7 @@ test('reset requires correct PIN and exact confirmation; then clears only this t
   assert.equal(h.workspaces['owner-1::branch-a'], undefined)
   const portals = JSON.parse(fs.readFileSync(path.join(h.dir, 'client_portal_accounts.json'), 'utf8'))
   assert.equal(Object.keys(portals).length, 1)
-  assert.equal(portals['owner-2::client@example.com'].workspaceOwnerId, 'owner-2')
+  assert.equal(portals['owner-2::client@example.com'].workspaceOwnerId, 'owner-2')\n  const quotePortals = JSON.parse(fs.readFileSync(path.join(h.dir, 'portals.json'), 'utf8'))\n  assert.equal(Object.keys(quotePortals).length, 1)\n  assert.ok(quotePortals.otherLink)\n  const decisions = JSON.parse(fs.readFileSync(path.join(h.dir, 'portal_decisions.json'), 'utf8'))\n  assert.equal(decisions.length, 1)\n  assert.equal(decisions[0].userId, 'owner-2')
   const snapshots = JSON.parse(fs.readFileSync(path.join(h.dir, 'workspace_reset_snapshots.json'), 'utf8'))
   assert.equal(snapshots.length, 1)
   assert.equal(snapshots[0].workspaces['owner-1'].data.invoices[0].id, 'i1')
