@@ -20,6 +20,8 @@ function mountWorkspaceReset(app, ctx) {
     snapshots: path.join(DATA_DIR, 'workspace_reset_snapshots.json'),
     audit: path.join(DATA_DIR, 'workspace_reset_audit.json'),
     portals: path.join(DATA_DIR, 'client_portal_accounts.json'),
+    quotePortals: path.join(DATA_DIR, 'portals.json'),
+    portalDecisions: path.join(DATA_DIR, 'portal_decisions.json'),
     invites: path.join(DATA_DIR, 'team_invites.json'),
     tickets: path.join(DATA_DIR, 'support-tickets.json'),
   }
@@ -124,6 +126,10 @@ function mountWorkspaceReset(app, ctx) {
     const ownedPortalAccounts = Object.fromEntries(Object.entries(portalAccounts || {}).filter(([, value]) =>
       value?.workspaceOwnerId === ownerId
     ))
+    const quotePortals = read(files.quotePortals, {})
+    const ownedQuotePortals = Object.fromEntries(Object.entries(quotePortals || {}).filter(([, value]) => value?.userId === ownerId))
+    const portalDecisions = read(files.portalDecisions, [])
+    const ownedPortalDecisions = Array.isArray(portalDecisions) ? portalDecisions.filter((value) => value?.userId === ownerId) : []
     const invites = read(files.invites, {})
     const ownedInvites = Object.fromEntries(Object.entries(invites || {}).filter(([, value]) =>
       value?.ownerId === ownerId
@@ -141,6 +147,8 @@ function mountWorkspaceReset(app, ctx) {
       workspaces: workspaceSnapshot,
       teamMembers: linkedMembers,
       portalAccounts: ownedPortalAccounts,
+      quotePortals: ownedQuotePortals,
+      portalDecisions: ownedPortalDecisions,
       teamInvites: ownedInvites,
       supportTickets: ownedTickets,
     }
@@ -167,6 +175,9 @@ function mountWorkspaceReset(app, ctx) {
     for (const [key, value] of Object.entries(nextPortalAccounts)) {
       if (value?.workspaceOwnerId === ownerId) delete nextPortalAccounts[key]
     }
+    const nextQuotePortals = { ...(quotePortals || {}) }
+    for (const [key, value] of Object.entries(nextQuotePortals)) if (value?.userId === ownerId) delete nextQuotePortals[key]
+    const nextPortalDecisions = Array.isArray(portalDecisions) ? portalDecisions.filter((value) => value?.userId !== ownerId) : []
     const nextInvites = { ...(invites || {}) }
     for (const [key, value] of Object.entries(nextInvites)) {
       if (value?.ownerId === ownerId) delete nextInvites[key]
@@ -184,6 +195,8 @@ function mountWorkspaceReset(app, ctx) {
       removedTeamMembers: linkedMembers.length,
       removedWorkspaces: workspaceKeys.length - 1,
       removedPortalAccounts: Object.keys(ownedPortalAccounts).length,
+      removedQuotePortals: Object.keys(ownedQuotePortals).length,
+      removedPortalDecisions: ownedPortalDecisions.length,
       removedSupportTickets: ownedTickets.length,
       ownerLoginPreserved: true,
     }].slice(-500)
@@ -195,6 +208,8 @@ function mountWorkspaceReset(app, ctx) {
         users: nextUsers,
         workspaces: nextWorkspaces,
         portals: nextPortalAccounts,
+        quotePortals: nextQuotePortals,
+        portalDecisions: nextPortalDecisions,
         invites: nextInvites,
         tickets: nextTickets,
         audit: nextAudit,
@@ -219,6 +234,8 @@ function mountWorkspaceReset(app, ctx) {
         teamMembers: linkedMembers.length,
         branchWorkspaces: Math.max(0, workspaceKeys.length - 1),
         clientPortalAccounts: Object.keys(ownedPortalAccounts).length,
+        quotePortalLinks: Object.keys(ownedQuotePortals).length,
+        quotePortalDecisions: ownedPortalDecisions.length,
         supportTickets: ownedTickets.length,
       },
       message: 'Workspace reset complete. Your owner login and recovery PIN remain active.',
