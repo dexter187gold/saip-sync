@@ -80,7 +80,14 @@ test('linked team member cannot set or execute a workspace reset', async (t) => 
   assert.equal(h.users['owner@example.com'].workspaceResetPinHash, undefined)
 })
 
-test('reset PIN requires owner password reauthentication', async (t) => {\n  const h = harness(t)\n  const denied = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456', currentPassword: 'wrong-password' })\n  assert.equal(denied.statusCode, 401)\n  assert.equal(h.users['owner@example.com'].workspaceResetPinHash, undefined)\n})\n\ntest('reset PIN requires 6–12 digits and confirmation', async (t) => {
+test('reset PIN requires owner password reauthentication', async (t) => {
+  const h = harness(t)
+  const denied = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456', currentPassword: 'wrong-password' })
+  assert.equal(denied.statusCode, 401)
+  assert.equal(h.users['owner@example.com'].workspaceResetPinHash, undefined)
+})
+
+test('reset PIN requires 6–12 digits and confirmation', async (t) => {
   const h = harness(t)
   assert.equal((await h.call('/api/workspace/reset-pin', { pin: '1234', confirmPin: '1234', currentPassword: 'owner-password' })).statusCode, 400)
   assert.equal((await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '654321', currentPassword: 'owner-password' })).statusCode, 400)
