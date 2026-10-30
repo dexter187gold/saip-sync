@@ -35,6 +35,8 @@ const DATA_JSON_FILES = [
   'portal_decisions.json',
   'client_portal_accounts.json',
   'support-tickets.json',
+  'workspace_reset_snapshots.json',
+  'workspace_reset_audit.json',
 ]
 
 const meta = {
