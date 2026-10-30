@@ -1,9 +1,7 @@
 /**
  * Owner-verified, PIN-protected workspace reset.
- *
- * Resets only the authenticated owner's tenant. It deliberately preserves the
- * owner login and all unrelated tenants. A private server-side snapshot is
- * written before any mutation so the operation is auditable and recoverable.
+ * Resets only the authenticated owner's tenant; preserves owner login and
+ * unrelated tenants. A private snapshot is committed before the reset.
  */
 const bcrypt = require('bcryptjs')
 const path = require('path')
@@ -12,26 +10,22 @@ const crypto = require('crypto')
 
 function mountWorkspaceReset(app, ctx) {
   const {
-    users, workspaces, auth, persistUsers, persistWorkspaces,
-    DATA_DIR, loadJson, saveJson, git, now,
+    users, workspaces, auth, DATA_DIR, git, now,
     loginRateLimit = (_req, _res, next) => next(),
   } = ctx
 
-  const SNAPSHOTS_FILE = path.join(DATA_DIR, 'workspace_reset_snapshots.json')
-  const AUDIT_FILE = path.join(DATA_DIR, 'workspace_reset_audit.json')
-  const PORTAL_ACCOUNTS_FILE = path.join(DATA_DIR, 'client_portal_accounts.json')
-  const TEAM_INVITES_FILE = path.join(DATA_DIR, 'team_invites.json')
-
+  const files = {
+    users: path.join(DATA_DIR, 'users.json'),
+    workspaces: path.join(DATA_DIR, 'workspaces.json'),
+    snapshots: path.join(DATA_DIR, 'workspace_reset_snapshots.json'),
+    audit: path.join(DATA_DIR, 'workspace_reset_audit.json'),
+    portals: path.join(DATA_DIR, 'client_portal_accounts.json'),
+    invites: path.join(DATA_DIR, 'team_invites.json'),
+    tickets: path.join(DATA_DIR, 'support-tickets.json'),
+  }
   const timestamp = () => typeof now === 'function' ? now() : new Date().toISOString()
-  const read = (file, fallback) => typeof loadJson === 'function' ? loadJson(file, fallback) : fallback
-  const write = (file, value) => {
-    if (typeof saveJson === 'function') saveJson(file, value)
-    else {
-      fs.mkdirSync(path.dirname(file), { recursive: true })
-      const tmp = file + '.tmp'
-      fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8')
-      fs.renameSync(tmp, file)
-    }
+  const read = (file, fallback) => {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return fallback }
   }
   const push = (reason) => {
     if (git && typeof git.schedulePush === 'function') git.schedulePush(reason)
@@ -50,6 +44,44 @@ function mountWorkspaceReset(app, ctx) {
     return actor
   }
 
+  // Stage every JSON file first, then rename. If a rename fails, restore the
+  // previous file contents before returning an error.
+  function commitFiles(nextByName) {
+    const staged = []
+    const previous = new Map()
+    try {
+      for (const [name, value] of Object.entries(nextByName)) {
+        const file = files[name]
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        previous.set(file, fs.existsSync(file) ? fs.readFileSync(file) : null)
+        const temp = file + '.reset-' + crypto.randomUUID() + '.tmp'
+        fs.writeFileSync(temp, JSON.stringify(value, null, 2), 'utf8')
+        // Validate the staged JSON before it can replace a live file.
+        JSON.parse(fs.readFileSync(temp, 'utf8'))
+        staged.push({ file, temp })
+      }
+      for (const item of staged) fs.renameSync(item.temp, item.file)
+    } catch (error) {
+      for (const item of staged) {
+        try { if (fs.existsSync(item.temp)) fs.unlinkSync(item.temp) } catch {}
+      }
+      for (const [file, bytes] of previous.entries()) {
+        try {
+          if (bytes == null) {
+            if (fs.existsSync(file)) fs.unlinkSync(file)
+          } else {
+            const rollback = file + '.rollback.tmp'
+            fs.writeFileSync(rollback, bytes)
+            fs.renameSync(rollback, file)
+          }
+        } catch (rollbackError) {
+          console.error('[workspace-reset] rollback failed', file, rollbackError.message)
+        }
+      }
+      throw error
+    }
+  }
+
   app.post('/api/workspace/reset-pin', auth, loginRateLimit, (req, res) => {
     const actor = owner(req, res)
     if (!actor) return
@@ -59,7 +91,10 @@ function mountWorkspaceReset(app, ctx) {
     if (pin !== confirmPin) return res.status(400).json({ error: 'PIN entries do not match' })
     actor.workspaceResetPinHash = bcrypt.hashSync(pin, 12)
     actor.workspaceResetPinUpdatedAt = timestamp()
-    persistUsers()
+    const nextUsers = { ...users, [actor.email]: actor }
+    commitFiles({ users: nextUsers })
+    Object.assign(users, nextUsers)
+    push('workspace-reset-pin')
     res.json({ ok: true, message: 'Workspace reset PIN saved. It is never returned by the server.' })
   })
 
@@ -85,22 +120,20 @@ function mountWorkspaceReset(app, ctx) {
     const workspaceSnapshot = {}
     for (const key of workspaceKeys) workspaceSnapshot[key] = workspaces[key]
 
-    const portalAccounts = read(PORTAL_ACCOUNTS_FILE, {})
+    const portalAccounts = read(files.portals, {})
     const ownedPortalAccounts = Object.fromEntries(Object.entries(portalAccounts || {}).filter(([, value]) =>
       value?.workspaceOwnerId === ownerId
     ))
-    const invites = read(TEAM_INVITES_FILE, {})
+    const invites = read(files.invites, {})
     const ownedInvites = Object.fromEntries(Object.entries(invites || {}).filter(([, value]) =>
       value?.ownerId === ownerId
     ))
-    const ticketsFile = path.join(DATA_DIR, 'support-tickets.json')
-    const tickets = read(ticketsFile, [])
+    const tickets = read(files.tickets, [])
     const affectedUserIds = new Set([ownerId, ...memberIds])
     const ownedTickets = Array.isArray(tickets) ? tickets.filter((ticket) => affectedUserIds.has(ticket?.userId)) : []
 
     const snapshotId = crypto.randomUUID()
     const createdAt = timestamp()
-    const snapshots = read(SNAPSHOTS_FILE, [])
     const snapshot = {
       id: snapshotId,
       createdAt,
@@ -111,18 +144,16 @@ function mountWorkspaceReset(app, ctx) {
       teamInvites: ownedInvites,
       supportTickets: ownedTickets,
     }
-    write(SNAPSHOTS_FILE, [...(Array.isArray(snapshots) ? snapshots : []), snapshot].slice(-3))
+    const snapshots = read(files.snapshots, [])
+    const nextSnapshots = [...(Array.isArray(snapshots) ? snapshots : []), snapshot].slice(-3)
 
-    // All validation and the recovery snapshot complete before the first mutation.
-    for (const member of linkedMembers) {
-      delete users[member.email]
-      delete workspaces[member.id]
-    }
-    for (const key of workspaceKeys) {
-      if (key !== ownerId) delete workspaces[key]
-    }
-    const current = workspaces[ownerId] || { version: 0 }
-    workspaces[ownerId] = {
+    const nextUsers = { ...users }
+    for (const member of linkedMembers) delete nextUsers[member.email]
+
+    const nextWorkspaces = { ...workspaces }
+    for (const key of workspaceKeys) if (key !== ownerId) delete nextWorkspaces[key]
+    const current = nextWorkspaces[ownerId] || { version: 0 }
+    nextWorkspaces[ownerId] = {
       ...current,
       data: {
         clients: [], invoices: [], quotes: [], tickets: [], payments: [],
@@ -132,23 +163,19 @@ function mountWorkspaceReset(app, ctx) {
       updated_at: createdAt,
     }
 
-    for (const [key, value] of Object.entries(portalAccounts || {})) {
-      if (value?.workspaceOwnerId === ownerId) delete portalAccounts[key]
+    const nextPortalAccounts = { ...(portalAccounts || {}) }
+    for (const [key, value] of Object.entries(nextPortalAccounts)) {
+      if (value?.workspaceOwnerId === ownerId) delete nextPortalAccounts[key]
     }
-    for (const [key, value] of Object.entries(invites || {})) {
-      if (value?.ownerId === ownerId) delete invites[key]
+    const nextInvites = { ...(invites || {}) }
+    for (const [key, value] of Object.entries(nextInvites)) {
+      if (value?.ownerId === ownerId) delete nextInvites[key]
     }
-    const remainingTickets = Array.isArray(tickets)
+    const nextTickets = Array.isArray(tickets)
       ? tickets.filter((ticket) => !affectedUserIds.has(ticket?.userId))
       : []
-    write(PORTAL_ACCOUNTS_FILE, portalAccounts)
-    write(TEAM_INVITES_FILE, invites)
-    write(ticketsFile, remainingTickets)
-    persistUsers()
-    persistWorkspaces()
-
-    const audit = read(AUDIT_FILE, [])
-    write(AUDIT_FILE, [...(Array.isArray(audit) ? audit : []), {
+    const audit = read(files.audit, [])
+    const nextAudit = [...(Array.isArray(audit) ? audit : []), {
       id: snapshotId,
       at: createdAt,
       action: 'workspace.reset',
@@ -159,7 +186,28 @@ function mountWorkspaceReset(app, ctx) {
       removedPortalAccounts: Object.keys(ownedPortalAccounts).length,
       removedSupportTickets: ownedTickets.length,
       ownerLoginPreserved: true,
-    }].slice(-500))
+    }].slice(-500)
+
+    try {
+      // Snapshot and all replacement data are committed together before memory changes.
+      commitFiles({
+        snapshots: nextSnapshots,
+        users: nextUsers,
+        workspaces: nextWorkspaces,
+        portals: nextPortalAccounts,
+        invites: nextInvites,
+        tickets: nextTickets,
+        audit: nextAudit,
+      })
+    } catch (error) {
+      console.error('[workspace-reset] file commit failed', error.message)
+      return res.status(500).json({ error: 'Reset could not be committed. No in-memory workspace changes were applied.' })
+    }
+
+    for (const key of Object.keys(users)) delete users[key]
+    Object.assign(users, nextUsers)
+    for (const key of Object.keys(workspaces)) delete workspaces[key]
+    Object.assign(workspaces, nextWorkspaces)
     push('workspace-reset')
 
     res.json({
