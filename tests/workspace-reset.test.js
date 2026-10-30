@@ -4,12 +4,13 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { mountWorkspaceReset } = require('../workspace-reset')
+const bcrypt = require('bcryptjs')
 
 function harness(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saip-workspace-reset-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   const users = {
-    'owner@example.com': { id: 'owner-1', email: 'owner@example.com', role: 'user' },
+    'owner@example.com': { id: 'owner-1', email: 'owner@example.com', role: 'user', password_hash: bcrypt.hashSync('owner-password', 4) },
     'member@example.com': { id: 'member-1', email: 'member@example.com', linkedWorkspaceOwnerId: 'owner-1', teamRole: 'front_desk' },
     'other@example.com': { id: 'owner-2', email: 'other@example.com', role: 'user' },
   }
@@ -74,15 +75,15 @@ function harness(t) {
 
 test('linked team member cannot set or execute a workspace reset', async (t) => {
   const h = harness(t)
-  const result = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456' }, 'member-1')
+  const result = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456', currentPassword: 'owner-password' }, 'member-1')
   assert.equal(result.statusCode, 403)
   assert.equal(h.users['owner@example.com'].workspaceResetPinHash, undefined)
 })
 
-test('reset PIN requires 6–12 digits and confirmation', async (t) => {
+test('reset PIN requires owner password reauthentication', async (t) => {\n  const h = harness(t)\n  const denied = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456', currentPassword: 'wrong-password' })\n  assert.equal(denied.statusCode, 401)\n  assert.equal(h.users['owner@example.com'].workspaceResetPinHash, undefined)\n})\n\ntest('reset PIN requires 6–12 digits and confirmation', async (t) => {
   const h = harness(t)
-  assert.equal((await h.call('/api/workspace/reset-pin', { pin: '1234', confirmPin: '1234' })).statusCode, 400)
-  assert.equal((await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '654321' })).statusCode, 400)
+  assert.equal((await h.call('/api/workspace/reset-pin', { pin: '1234', confirmPin: '1234', currentPassword: 'owner-password' })).statusCode, 400)
+  assert.equal((await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '654321', currentPassword: 'owner-password' })).statusCode, 400)
   const saved = await h.call('/api/workspace/reset-pin', { pin: '123456', confirmPin: '123456' })
   assert.equal(saved.statusCode, 200)
   assert.equal(saved.payload.ok, true)
@@ -93,7 +94,7 @@ test('reset PIN requires 6–12 digits and confirmation', async (t) => {
 
 test('reset requires correct PIN and exact confirmation; then clears only this tenant', async (t) => {
   const h = harness(t)
-  await h.call('/api/workspace/reset-pin', { pin: '246810', confirmPin: '246810' })
+  await h.call('/api/workspace/reset-pin', { pin: '246810', confirmPin: '246810', currentPassword: 'owner-password' })
   const wrong = await h.call('/api/workspace/reset', { pin: '111111', confirmation: 'RESET MY WORKSPACE' })
   assert.equal(wrong.statusCode, 401)
   assert.equal(h.workspaces['owner-1'].data.invoices.length, 1)
