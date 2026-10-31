@@ -79,27 +79,43 @@
   }
 
   function doLogin() {
-    var email = (document.getElementById("email").value || "").trim();
-    var password = document.getElementById("password").value || "";
+    var button = document.getElementById("btn-login");
+    var emailEl = document.getElementById("email");
+    var passwordEl = document.getElementById("password");
+    if (!emailEl || !passwordEl) { showErr("Sign-in form did not load correctly. Refresh this page."); return; }
+    var email = (emailEl.value || "").trim();
+    var password = passwordEl.value || "";
     showErr("");
+    if (!email || !password) { showErr("Enter your email and password."); return; }
+    if (button) { button.disabled = true; button.textContent = "Signing in…"; }
     fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email, password: password })
-    }).then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
-      .then(function (x) {
-        if (!x.r.ok) throw new Error(x.j.error || "Login failed");
-        return fetch("/api/admin/me", { headers: { Authorization: "Bearer " + x.j.token } })
-          .then(function (r2) { return r2.json().then(function (j2) { return { token: x.j.token, me: j2, ok: r2.ok }; }); });
-      })
-      .then(function (x) {
-        if (!x.ok) throw new Error((x.me && x.me.error) || "Not an admin account");
-        token = x.token;
-        localStorage.setItem("saip_admin_token", token);
-        showApp();
-        toast("Signed in");
-      })
-      .catch(function (e) { showErr(e.message || "Login failed"); });
+    }).then(function (r) {
+      return r.text().then(function (body) {
+        var data;
+        try { data = JSON.parse(body); } catch (_) { throw new Error("The server returned an unreadable response (HTTP " + r.status + ")."); }
+        if (!r.ok) throw new Error(data.error || "Sign-in failed (HTTP " + r.status + ").");
+        if (!data.token) throw new Error("The server did not return a sign-in token.");
+        return fetch("/api/admin/me", { headers: { Authorization: "Bearer " + data.token } })
+          .then(function (r2) { return r2.text().then(function (body2) {
+            var me;
+            try { me = JSON.parse(body2); } catch (_) { throw new Error("Could not verify administrator access (HTTP " + r2.status + ")."); }
+            if (!r2.ok) throw new Error(me.error || "This account does not have administrator access.");
+            return { token: data.token, me: me };
+          }); });
+      });
+    }).then(function (result) {
+      token = result.token;
+      localStorage.setItem("saip_admin_token", token);
+      showApp();
+      toast("Signed in");
+    }).catch(function (e) {
+      showErr(e && e.message ? e.message : "Sign-in failed. Please try again.");
+    }).finally(function () {
+      if (button) { button.disabled = false; button.textContent = "Sign in"; }
+    });
   }
 
   function loadDash() {
@@ -340,8 +356,18 @@
     });
   }
 
+  window.SAIPAdminLogin = doLogin;
+
+  window.addEventListener("error", function (event) {
+    showErr("Admin page script error: " + (event.message || "unknown error"));
+  });
+  window.addEventListener("unhandledrejection", function (event) {
+    showErr("Admin page request failed: " + (event.reason && event.reason.message ? event.reason.message : "unknown error"));
+  });
+
   function boot() {
-    document.getElementById("btn-login").addEventListener("click", doLogin);
+    var loginButton = document.getElementById("btn-login");
+    if (loginButton) loginButton.addEventListener("click", doLogin);
     document.getElementById("password").addEventListener("keydown", function (e) {
       if (e.key === "Enter") doLogin();
     });
