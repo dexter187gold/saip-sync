@@ -125,9 +125,13 @@ function mountWorkspaceReset(app, ctx) {
 
     const ownerId = actor.id
     const linkedMembers = Object.values(users).filter((u) => u.linkedWorkspaceOwnerId === ownerId)
-    const memberIds = new Set(linkedMembers.map((u) => u.id))
+    // Reset only this owner's tenant and its branch namespaces. Never delete
+    // a linked member's independent account or personal workspace.
+    const ownerEmailKey = String(actor.email || '').trim().toLowerCase()
     const workspaceKeys = Object.keys(workspaces).filter((key) =>
-      key === ownerId || key.startsWith(ownerId + '::') || memberIds.has(key)
+      key === ownerId ||
+      key.startsWith(ownerId + '::') ||
+      String(key).trim().toLowerCase() === ownerEmailKey
     )
     const workspaceSnapshot = {}
     for (const key of workspaceKeys) workspaceSnapshot[key] = workspaces[key]
@@ -145,8 +149,7 @@ function mountWorkspaceReset(app, ctx) {
       value?.ownerId === ownerId
     ))
     const tickets = read(files.tickets, [])
-    const affectedUserIds = new Set([ownerId, ...memberIds])
-    const ownedTickets = Array.isArray(tickets) ? tickets.filter((ticket) => affectedUserIds.has(ticket?.userId)) : []
+    const ownedTickets = Array.isArray(tickets) ? tickets.filter((ticket) => ticket?.userId === ownerId) : []
 
     const snapshotId = crypto.randomUUID()
     const createdAt = timestamp()
@@ -166,7 +169,17 @@ function mountWorkspaceReset(app, ctx) {
     const nextSnapshots = [...(Array.isArray(snapshots) ? snapshots : []), snapshot].slice(-3)
 
     const nextUsers = { ...users }
-    for (const member of linkedMembers) delete nextUsers[member.email]
+    // Unlink team seats from this now-empty workspace but preserve each
+    // person's own login, role-independent profile and personal workspace.
+    for (const member of linkedMembers) {
+      nextUsers[member.email] = {
+        ...nextUsers[member.email],
+        linkedWorkspaceOwnerId: null,
+        teamRole: null,
+        linkedAt: null,
+        updated_at: createdAt,
+      }
+    }
 
     const nextWorkspaces = { ...workspaces }
     for (const key of workspaceKeys) if (key !== ownerId) delete nextWorkspaces[key]
@@ -193,7 +206,7 @@ function mountWorkspaceReset(app, ctx) {
       if (value?.ownerId === ownerId) delete nextInvites[key]
     }
     const nextTickets = Array.isArray(tickets)
-      ? tickets.filter((ticket) => !affectedUserIds.has(ticket?.userId))
+      ? tickets.filter((ticket) => ticket?.userId !== ownerId)
       : []
     const audit = read(files.audit, [])
     const nextAudit = [...(Array.isArray(audit) ? audit : []), {
@@ -202,7 +215,7 @@ function mountWorkspaceReset(app, ctx) {
       action: 'workspace.reset',
       actorId: ownerId,
       actorEmail: actor.email,
-      removedTeamMembers: linkedMembers.length,
+      unlinkedTeamMembers: linkedMembers.length,
       removedWorkspaces: workspaceKeys.length - 1,
       removedPortalAccounts: Object.keys(ownedPortalAccounts).length,
       removedQuotePortals: Object.keys(ownedQuotePortals).length,
@@ -242,14 +255,15 @@ function mountWorkspaceReset(app, ctx) {
       resetAt: createdAt,
       ownerLoginPreserved: true,
       removed: {
-        teamMembers: linkedMembers.length,
+        teamMembers: 0,
+        unlinkedTeamMembers: linkedMembers.length,
         branchWorkspaces: Math.max(0, workspaceKeys.length - 1),
         clientPortalAccounts: Object.keys(ownedPortalAccounts).length,
         quotePortalLinks: Object.keys(ownedQuotePortals).length,
         quotePortalDecisions: ownedPortalDecisions.length,
         supportTickets: ownedTickets.length,
       },
-      message: 'Workspace reset complete. Your owner login and recovery PIN remain active.',
+      message: 'Workspace reset complete. Your owner login and recovery PIN remain active. Linked team accounts were preserved and safely unlinked; their personal workspaces were not deleted.',
     })
   })
 
