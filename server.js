@@ -153,14 +153,15 @@ function seedAdmin() {
       workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: now() }
       console.log('[admin] seeded', key)
     } else {
+      // Preserve an existing administrator password across restarts.
+      // Password changes belong to the authenticated recovery/reset flow, not startup seeding.
       let changed = false
       if (users[key].role !== 'admin') { users[key].role = 'admin'; changed = true }
-      let needHash = force
-      try { if (!bcrypt.compareSync(DEFAULT_ADMIN_PASSWORD, users[key].password_hash)) needHash = true } catch { needHash = true }
-      if (needHash) {
+      if (!users[key].password_hash) {
+        // Repair only a missing hash; never overwrite a valid existing credential.
         users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10)
-        users[key].updated_at = now()
         changed = true
+        console.warn('[admin] missing password hash repaired for', key)
       }
       if (changed) users[key].updated_at = now()
     }
