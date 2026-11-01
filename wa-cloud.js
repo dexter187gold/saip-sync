@@ -13,17 +13,19 @@ function mountWaCloud(app, ctx = {}) {
   const verify = process.env.WA_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN || 'saip-wa-verify'
   const graph = process.env.WA_GRAPH_VERSION || 'v21.0'
 
-  app.get('/api/wa/status', (_req, res) => {
+  const statusHandler = (_req, res) => {
     res.json({
       ok: true,
       configured: !!(token && phoneId),
       phoneNumberId: phoneId ? String(phoneId).slice(0, 4) + '…' : '',
       graph,
     })
-  })
+  }
+  app.get('/api/wa/status', statusHandler)
+  app.get('/api/whatsapp/status', statusHandler)
 
-  // Meta webhook verification
-  app.get('/api/wa/webhook', (req, res) => {
+  // Meta webhook verification (wa + whatsapp aliases)
+  const webhookGet = (req, res) => {
     const mode = req.query['hub.mode']
     const challenge = req.query['hub.challenge']
     const vt = req.query['hub.verify_token']
@@ -31,10 +33,8 @@ function mountWaCloud(app, ctx = {}) {
       return res.status(200).send(challenge)
     }
     res.status(403).send('Forbidden')
-  })
-
-  app.post('/api/wa/webhook', (req, res) => {
-    // Acknowledge quickly; process async later
+  }
+  const webhookPost = (req, res) => {
     try {
       const body = req.body || {}
       if (body.object === 'whatsapp_business_account') {
@@ -44,7 +44,11 @@ function mountWaCloud(app, ctx = {}) {
       console.warn('[wa-cloud] webhook', e.message)
     }
     res.sendStatus(200)
-  })
+  }
+  app.get('/api/wa/webhook', webhookGet)
+  app.get('/api/whatsapp/webhook', webhookGet)
+  app.post('/api/wa/webhook', webhookPost)
+  app.post('/api/whatsapp/webhook', webhookPost)
 
   async function sendText(to, body) {
     if (!token || !phoneId) {
@@ -78,7 +82,7 @@ function mountWaCloud(app, ctx = {}) {
     return data
   }
 
-  app.post('/api/wa/send', auth || ((_, __, next) => next()), async (req, res) => {
+  const sendHandler = async (req, res) => {
     try {
       const to = req.body?.to || req.body?.phone
       const body = req.body?.body || req.body?.text || req.body?.message
@@ -88,7 +92,10 @@ function mountWaCloud(app, ctx = {}) {
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message || 'send failed', details: e.data })
     }
-  })
+  }
+  const maybeAuth = auth || ((_, __, next) => next())
+  app.post('/api/wa/send', maybeAuth, sendHandler)
+  app.post('/api/whatsapp/send', maybeAuth, sendHandler)
 
   console.log('[wa-cloud] scaffold · configured=' + !!(token && phoneId))
 }
