@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro Sync v6.13.0 — portal · client login · git data · WA Cloud scaffold
+ * SA Invoice Pro Sync v6.46.1 — portal · client login · git data · WA Cloud
  */
 require('dotenv').config()
 const express = require('express')
@@ -25,7 +25,7 @@ try {
         res.setHeader('Access-Control-Allow-Credentials', 'true')
       } else res.setHeader('Access-Control-Allow-Origin', '*')
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Status-Token, X-Requested-With')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
       if (req.method === 'OPTIONS') return res.status(204).end()
       next()
     })
@@ -53,7 +53,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
 const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.13.0'
+const VERSION = '6.46.1'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -79,11 +79,7 @@ function saveJson(file, obj) {
     fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8')
     fs.renameSync(tmp, file)
   } catch (e) {
-    try {
-      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8')
-    } catch (e2) {
-      console.error(e2.message)
-    }
+    try { fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8') } catch (e2) { console.error(e2.message) }
   }
 }
 
@@ -105,69 +101,36 @@ function reloadFromDisk() {
   Object.assign(passwordResets, r)
   supportTickets.splice(0, supportTickets.length, ...(Array.isArray(s) ? s : []))
 }
-function persistUsers() {
-  saveJson(USERS_FILE, users)
-  git.schedulePush('users')
-}
-function persistWorkspaces() {
-  saveJson(WORKSPACES_FILE, workspaces)
-  git.schedulePush('workspaces')
-}
-function persistResets() {
-  saveJson(RESET_FILE, passwordResets)
-  git.schedulePush('resets')
-}
-function persistSupportTickets() {
-  saveJson(SUPPORT_FILE, supportTickets)
-  git.schedulePush('support-tickets')
-}
-function currentUser(req) {
-  return Object.values(users).find((u) => u.id === req.user?.id) || null
-}
+function persistUsers() { saveJson(USERS_FILE, users); git.schedulePush('users') }
+function persistWorkspaces() { saveJson(WORKSPACES_FILE, workspaces); git.schedulePush('workspaces') }
+function persistResets() { saveJson(RESET_FILE, passwordResets); git.schedulePush('resets') }
+function persistSupportTickets() { saveJson(SUPPORT_FILE, supportTickets); git.schedulePush('support-tickets') }
+function currentUser(req) { return Object.values(users).find((u) => u.id === req.user?.id) || null }
 function requireSupportAdmin(req, res) {
   const actor = currentUser(req)
-  if (!actor || actor.role !== 'admin') {
-    res.status(403).json({ error: 'Administrator access required' })
-    return null
-  }
+  if (!actor || actor.role !== 'admin') { res.status(403).json({ error: 'Administrator access required' }); return null }
   return actor
 }
-function now() {
-  return new Date().toISOString()
-}
+function now() { return new Date().toISOString() }
 
 function seedAdmin() {
   const defaults = ['admin@sainvoice.pro']
   const envEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
   if (envEmail && !defaults.includes(envEmail)) defaults.push(envEmail)
-  const force = String(process.env.ADMIN_FORCE_RESET || '').trim() === '1'
   for (const key of defaults) {
     if (!users[key]) {
       const id = uuidv4()
-      users[key] = {
-        id, email: key,
-        password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10),
-        name: 'Administrator', role: 'admin',
-        created_at: now(), updated_at: now(),
-      }
+      users[key] = { id, email: key, password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10), name: 'Administrator', role: 'admin', created_at: now(), updated_at: now() }
       workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: now() }
       console.log('[admin] seeded', key)
     } else {
-      // Preserve an existing administrator password across restarts.
-      // Password changes belong to the authenticated recovery/reset flow, not startup seeding.
       let changed = false
       if (users[key].role !== 'admin') { users[key].role = 'admin'; changed = true }
-      if (!users[key].password_hash) {
-        // Repair only a missing hash; never overwrite a valid existing credential.
-        users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10)
-        changed = true
-        console.warn('[admin] missing password hash repaired for', key)
-      }
+      if (!users[key].password_hash) { users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10); changed = true }
       if (changed) users[key].updated_at = now()
     }
   }
-  persistUsers()
-  persistWorkspaces()
+  persistUsers(); persistWorkspaces()
 }
 
 mountSecurity(app, {})
@@ -178,12 +141,8 @@ function auth(req, res, next) {
   const header = req.headers.authorization || ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   if (!token) return res.status(401).json({ error: 'Missing token' })
-  try {
-    req.user = jwt.verify(token, JWT_SECRET)
-    next()
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' })
-  }
+  try { req.user = jwt.verify(token, JWT_SECRET); next() }
+  catch { return res.status(401).json({ error: 'Invalid or expired token' }) }
 }
 
 app.post('/api/auth/register', registerRateLimit, (req, res) => {
@@ -192,20 +151,13 @@ app.post('/api/auth/register', registerRateLimit, (req, res) => {
   if (!key) return res.status(400).json({ error: 'Valid email required' })
   const pwCheck = strongPassword(password)
   if (!pwCheck.ok) return res.status(400).json({ error: pwCheck.error })
-  if (users[key]) {
-    return res.status(409).json({
-      error: 'This email already has a cloud account. Sign in, or use Forgot password to set a new password — your invoices/jobs stay in the cloud.',
-      code: 'email_exists',
-      exists: true,
-    })
-  }
+  if (users[key]) return res.status(409).json({ error: 'This email already has a cloud account.', code: 'email_exists', exists: true })
   const id = uuidv4()
   const hash = bcrypt.hashSync(password, 10)
   const ts = now()
   users[key] = { id, email: key, password_hash: hash, name: name || null, role: 'user', created_at: ts, updated_at: ts }
   workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: ts }
-  persistUsers()
-  persistWorkspaces()
+  persistUsers(); persistWorkspaces()
   const token = jwt.sign({ id, email: key }, JWT_SECRET, { expiresIn: '90d' })
   res.json({ ok: true, token, user: { id, email: key, name: name || null } })
 })
@@ -216,15 +168,7 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
   if (!key || !password) return res.status(400).json({ error: 'Email and password required' })
   const user = users[key]
   const ok = user && bcrypt.compareSync(password, user.password_hash)
-  if (!ok) {
-    if (Object.keys(users).length === 0) {
-      return res.status(401).json({ error: 'No accounts on server yet — Sign up once, then Sync Now from a device that has your data', code: 'empty_store' })
-    }
-    if (user) {
-      return res.status(401).json({ error: 'Wrong password for this email. Use Forgot password — recovery code sets a new password without losing your cloud profile.', code: 'wrong_password', exists: true })
-    }
-    return res.status(401).json({ error: 'No account with that email. Use Sign up, or check the email spelling.', code: 'unknown_email', exists: false })
-  }
+  if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
   res.json({ ok: true, token, user: { id: user.id, email: user.email, name: user.name } })
 })
@@ -232,7 +176,7 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
 app.get('/api/auth/me', auth, (req, res) => {
   const user = Object.values(users).find((u) => u.id === req.user.id)
   if (!user) return res.status(404).json({ error: 'User not found' })
-  res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, created_at: user.created_at, linkedWorkspaceOwnerId: user.linkedWorkspaceOwnerId || null, teamRole: user.teamRole || null } })
+  res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name } })
 })
 
 app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
@@ -246,7 +190,7 @@ app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
   passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code }
   passwordResets['code:' + email + ':' + recovery_code] = { email, expires, used: false, created_at: now(), token, recovery_code }
   persistResets()
-  res.json({ ok: true, message: 'Recovery code created. Enter it with your new password in the app.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
+  res.json({ ok: true, message: 'Recovery code created.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
 })
 
 app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
@@ -267,8 +211,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   user.password_hash = bcrypt.hashSync(password, 10)
   user.updated_at = now()
   rec.used = true
-  persistUsers()
-  persistResets()
+  persistUsers(); persistResets()
   const jwtToken = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
   res.json({ ok: true, message: 'Password updated', token: jwtToken, user: { id: user.id, email: user.email, name: user.name } })
 })
@@ -277,8 +220,8 @@ app.get('/api/workspace', auth, (req, res) => {
   const me = Object.values(users).find((u) => u.id === req.user.id)
   const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces })
   const row = ownerId ? workspaces[ownerId] : null
-  if (!row) return res.status(404).json({ error: 'No workspace for this email yet' })
-  res.json({ ok: true, version: row.version, updated_at: row.updated_at, data: row.data, ownerId, shared: ownerId !== req.user.id })
+  if (!row) return res.status(404).json({ error: 'No workspace' })
+  res.json({ ok: true, version: row.version, updated_at: row.updated_at, data: row.data, ownerId })
 })
 
 app.put('/api/workspace', auth, (req, res) => {
@@ -291,61 +234,33 @@ app.put('/api/workspace', auth, (req, res) => {
   const ts = now()
   workspaces[ownerId] = { data, version: newVersion, updated_at: ts }
   persistWorkspaces()
-  res.json({ ok: true, version: newVersion, updated_at: ts, ownerId, shared: ownerId !== req.user.id })
+  res.json({ ok: true, version: newVersion, updated_at: ts, ownerId })
 })
 
 app.get('/api/support/tickets', auth, (req, res) => {
-  const rows = supportTickets.filter((t) => t.userId === req.user.id).slice(0, 100)
-  res.json({ ok: true, tickets: rows })
+  res.json({ ok: true, tickets: supportTickets.filter((t) => t.userId === req.user.id).slice(0, 100) })
 })
-
 app.post('/api/support/tickets', auth, loginRateLimit, (req, res) => {
   const subject = String(req.body?.subject || '').trim().slice(0, 120)
   const details = String(req.body?.details || '').trim().slice(0, 4000)
-  const category = String(req.body?.category || 'Other').trim().slice(0, 40)
-  const allowedCategories = ['Sync or data mismatch', 'Invoice or PDF issue', 'Sign-in or account issue', 'Payments or calculations', 'Bug or unexpected behaviour', 'Privacy or data request', 'Other']
-  if (subject.length < 4) return res.status(400).json({ error: 'Subject must be at least 4 characters' })
-  if (details.length < 10) return res.status(400).json({ error: 'Please describe the issue in at least 10 characters' })
+  if (subject.length < 4 || details.length < 10) return res.status(400).json({ error: 'Subject and details required' })
   const actor = currentUser(req)
-  if (!actor) return res.status(401).json({ error: 'Account no longer exists' })
+  if (!actor) return res.status(401).json({ error: 'Account missing' })
   const id = uuidv4()
-  const ticket = {
-    id,
-    number: 'SAIP-' + new Date().getUTCFullYear() + '-' + id.slice(0, 6).toUpperCase(),
-    userId: actor.id,
-    userEmail: actor.email,
-    subject,
-    details,
-    category: allowedCategories.includes(category) ? category : 'Other',
-    status: 'open',
-    createdAt: now(),
-    updatedAt: now(),
-    replies: [],
-  }
-  supportTickets.unshift(ticket)
-  persistSupportTickets()
-  res.status(201).json({ ok: true, ticket: { id: ticket.id, number: ticket.number, subject: ticket.subject, category: ticket.category, status: ticket.status, createdAt: ticket.createdAt } })
+  const ticket = { id, number: 'SAIP-' + id.slice(0, 6).toUpperCase(), userId: actor.id, userEmail: actor.email, subject, details, status: 'open', createdAt: now(), updatedAt: now(), replies: [] }
+  supportTickets.unshift(ticket); persistSupportTickets()
+  res.status(201).json({ ok: true, ticket })
 })
-
 app.get('/api/admin/support/tickets', auth, (req, res) => {
   if (!requireSupportAdmin(req, res)) return
-  const status = String(req.query.status || '').trim()
-  const rows = supportTickets.filter((t) => !status || t.status === status).slice(0, 200)
-  res.json({ ok: true, tickets: rows })
+  res.json({ ok: true, tickets: supportTickets.slice(0, 200) })
 })
-
 app.patch('/api/admin/support/tickets/:id', auth, (req, res) => {
   if (!requireSupportAdmin(req, res)) return
-  const ticket = supportTickets.find((t) => t.id === req.params.id || t.number === req.params.id)
-  if (!ticket) return res.status(404).json({ error: 'Support ticket not found' })
-  const allowedStatuses = ['open', 'in_progress', 'waiting', 'resolved', 'closed']
-  const status = req.body?.status == null ? null : String(req.body.status)
-  const reply = String(req.body?.reply || '').trim().slice(0, 4000)
-  if (status && !allowedStatuses.includes(status)) return res.status(400).json({ error: 'Invalid ticket status' })
-  if (status) ticket.status = status
-  if (reply) ticket.replies.push({ id: uuidv4(), author: currentUser(req)?.email || 'Support', body: reply, createdAt: now() })
-  ticket.updatedAt = now()
-  persistSupportTickets()
+  const ticket = supportTickets.find((t) => t.id === req.params.id)
+  if (!ticket) return res.status(404).json({ error: 'Not found' })
+  if (req.body?.status) ticket.status = String(req.body.status)
+  ticket.updatedAt = now(); persistSupportTickets()
   res.json({ ok: true, ticket })
 })
 
@@ -358,13 +273,11 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.13.0 · client portal login · git · WA cloud',
-    features: ['cloud_auth', 'auth_recover', 'workspace_sync', 'team_workspace', 'google_oauth', 'customer_portal', 'client_portal_login', 'payfast_itn', 'admin_console', 'wa_cloud_scaffold'],
+    codename: '6.46.1 · health · WA dual paths',
+    features: ['cloud_auth', 'workspace_sync', 'team_workspace', 'client_portal', 'payfast_itn', 'wa_cloud'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
-    ready: PUBLIC_BASE + '/ready',
-    clientPortal: PUBLIC_BASE + '/api/client-portal/health',
-    git: { enabled: GIT_ENABLED },
+    apiHealth: PUBLIC_BASE + '/api/health',
   })
 })
 
@@ -376,6 +289,10 @@ app.get('/admin/', (_req, res) => res.redirect(302, '/admin'))
 app.get('/admin-app.js', (_req, res) => {
   try { res.type('application/javascript').send(fs.readFileSync(path.join(__dirname, 'admin-app.js'), 'utf8')) }
   catch (e) { res.status(404).type('text').send('// missing') }
+})
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, version: VERSION, ts: now(), service: 'saip-sync' })
 })
 
 app.get('/health', (_req, res) => {
@@ -405,9 +322,7 @@ for (const name of ['./authRecover', './payfastItn', './portal', './client-porta
       try {
         fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
         console.log('[optional]', name)
-      } catch (e) {
-        console.warn('[optional]', name, e.message)
-      }
+      } catch (e) { console.warn('[optional]', name, e.message) }
     }
   } catch (_) {}
 }
@@ -418,10 +333,7 @@ async function boot() {
   reloadFromDisk()
   seedAdmin()
   git.startInterval(10 * 60 * 1000)
-  setTimeout(() => { git.flushPush('boot-seed').catch(() => {}) }, 8000)
-  app.listen(PORT, () => {
-    console.log(`SAIP Sync v${VERSION} on port ${PORT} · git=${GIT_ENABLED ? 'on' : 'off'} · users=${Object.keys(users).length}`)
-  })
+  app.listen(PORT, () => console.log(`[saip-sync] listening on ${PORT}`))
 }
 
-boot().catch((e) => { console.error('boot failed', e); process.exit(1) })
+boot().catch((e) => { console.error(e); process.exit(1) })
