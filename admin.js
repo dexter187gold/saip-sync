@@ -29,6 +29,10 @@ function mountAdmin(app, ctx) {
     if (!token) return res.status(401).json({ error: 'Missing token' })
     try {
       const payload = jwt.verify(token, JWT_SECRET)
+      if (payload.owner_control === true && payload.email === OWNER_EMAIL) {
+        req.user = { id: 'owner-control-centre', email: OWNER_EMAIL, name: 'SA Invoice Pro Owner', role: 'admin' }
+        return next()
+      }
       const user = Object.values(users).find((u) => u.id === payload.id || u.email === payload.email)
       if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin only' })
       req.user = user
@@ -37,6 +41,29 @@ function mountAdmin(app, ctx) {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
   }
+
+  const OWNER_EMAIL = 'sainvoicepro@gmail.com'
+  const OWNER_TOKEN = String(process.env.SA_OWNER_TOKEN || '')
+  const ownerLoginRateLimit = ctx.loginRateLimit || ((_req, _res, next) => next())
+
+  app.post('/api/admin/owner-login', ownerLoginRateLimit, (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const supplied = String(req.body?.token || '')
+    if (!OWNER_TOKEN || !email || email !== OWNER_EMAIL || !supplied) {
+      return res.status(401).json({ error: 'Invalid owner credentials' })
+    }
+    const a = Buffer.from(supplied)
+    const b = Buffer.from(OWNER_TOKEN)
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return res.status(401).json({ error: 'Invalid owner credentials' })
+    }
+    const session = jwt.sign(
+      { email: OWNER_EMAIL, owner_control: true },
+      JWT_SECRET,
+      { expiresIn: '2h', issuer: 'saip-sync', audience: 'saip-owner-control' }
+    )
+    res.json({ ok: true, token: session, user: { email: OWNER_EMAIL, name: 'SA Invoice Pro Owner', role: 'admin' }, expires_in: 7200 })
+  })
 
   function uuid() {
     if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
