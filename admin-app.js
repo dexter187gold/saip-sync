@@ -364,7 +364,8 @@
   function boot() {
     var loginButton = document.getElementById("btn-login");
     if (loginButton) loginButton.addEventListener("click", doLogin);
-    document.getElementById("password").addEventListener("keydown", function (e) {
+    var tokenInput = document.getElementById("owner-token");
+    if (tokenInput) tokenInput.addEventListener("keydown", function (e) {
       if (e.key === "Enter") doLogin();
     });
     document.getElementById("btn-logout").addEventListener("click", function () {
@@ -379,7 +380,7 @@
     if (token) {
       fetchJson("/api/admin/me").then(function () { showApp(); }).catch(function () {
         token = "";
-        localStorage.removeItem("saip_admin_token");
+        sessionStorage.removeItem("saip_admin_token");
       });
     }
   }
