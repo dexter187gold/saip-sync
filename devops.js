@@ -10,15 +10,28 @@ function mountDevops(app, ctx) {
   const { DATA_DIR, JWT_SECRET, users, git, now = () => new Date().toISOString() } = ctx
   const file = path.join(DATA_DIR || path.join(__dirname, 'data'), 'announcements.json')
   let announcements = []
-  try {
-    if (fs.existsSync(file)) {
-      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
-      announcements = Array.isArray(parsed) ? parsed : []
-    }
-  } catch (e) { console.warn('[devops] announcement store could not be read:', e.message) }
+  let loaded = false
   global.__saip_announcements = announcements
 
+  // The server mounts this module before boot() pulls the Git-backed data repo.
+  // Load lazily on the first API request so the durable file has already arrived.
+  function ensureLoaded() {
+    if (loaded) return
+    try {
+      if (fs.existsSync(file)) {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+        announcements = Array.isArray(parsed) ? parsed : []
+      }
+    } catch (e) {
+      console.warn('[devops] announcement store could not be read:', e.message)
+      announcements = []
+    }
+    loaded = true
+    global.__saip_announcements = announcements
+  }
+
   function persist() {
+    ensureLoaded()
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true })
       const tmp = file + '.tmp'
@@ -58,6 +71,7 @@ function mountDevops(app, ctx) {
   })
 
   app.get('/api/dev/overview', developerAuth, async (_req, res) => {
+    ensureLoaded()
     let release = { configured: false, latest: null, workflow: null }
     if (process.env.SAIP_GITHUB_TOKEN) {
       release.configured = true
@@ -92,11 +106,13 @@ function mountDevops(app, ctx) {
   })
 
   app.get('/api/dev/announcements', developerAuth, (_req, res) => {
+    ensureLoaded()
     res.setHeader('Cache-Control', 'no-store')
     res.json({ ok: true, announcements })
   })
 
   app.post('/api/dev/announcements', developerAuth, (req, res) => {
+    ensureLoaded()
     const title = String(req.body?.title || '').trim().slice(0, 120)
     const body = String(req.body?.body || '').trim().slice(0, 3000)
     const severity = String(req.body?.severity || 'info').toLowerCase()
@@ -125,6 +141,7 @@ function mountDevops(app, ctx) {
   })
 
   app.patch('/api/dev/announcements/:id', developerAuth, (req, res) => {
+    ensureLoaded()
     const item = announcements.find((a) => a.id === req.params.id)
     if (!item) return res.status(404).json({ error: 'Announcement not found' })
     if (req.body?.active != null) item.active = !!req.body.active
@@ -136,6 +153,7 @@ function mountDevops(app, ctx) {
   })
 
   app.delete('/api/dev/announcements/:id', developerAuth, (req, res) => {
+    ensureLoaded()
     const index = announcements.findIndex((a) => a.id === req.params.id)
     if (index < 0) return res.status(404).json({ error: 'Announcement not found' })
     const [removed] = announcements.splice(index, 1)
@@ -177,6 +195,7 @@ function mountDevops(app, ctx) {
   })
 
   app.get('/api/notifications', ctx.auth, (req, res) => {
+    ensureLoaded()
     const email = String(req.user?.email || '').toLowerCase()
     const items = announcements.filter(active).map((a) => ({
       id: a.id,
@@ -190,6 +209,7 @@ function mountDevops(app, ctx) {
   })
 
   app.post('/api/notifications/read', ctx.auth, (req, res) => {
+    ensureLoaded()
     const email = String(req.user?.email || '').toLowerCase()
     for (const item of announcements) {
       if (!Array.isArray(item.readBy)) item.readBy = []
