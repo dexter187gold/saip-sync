@@ -29,6 +29,10 @@ function mountAdmin(app, ctx) {
     if (!token) return res.status(401).json({ error: 'Missing token' })
     try {
       const payload = jwt.verify(token, JWT_SECRET)
+      // Developer portal sessions are intentionally not admin sessions.
+      if (payload.developer_portal === true) {
+        return res.status(403).json({ error: 'Developer portal session cannot access admin APIs' })
+      }
       if (payload.owner_control === true && payload.email === OWNER_EMAIL) {
         req.user = { id: 'owner-control-centre', email: OWNER_EMAIL, name: 'SA Invoice Pro Owner', role: 'admin' }
         return next()
@@ -63,6 +67,46 @@ function mountAdmin(app, ctx) {
       { expiresIn: '2h', issuer: 'saip-sync', audience: 'saip-owner-control' }
     )
     res.json({ ok: true, token: session, user: { email: OWNER_EMAIL, name: 'SA Invoice Pro Owner', role: 'admin' }, expires_in: 7200 })
+  })
+
+  // Separate developer identity: same owner proof, narrower token audience and role.
+  app.post('/api/dev/owner-login', ownerLoginRateLimit, (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const supplied = String(req.body?.token || '')
+    if (!OWNER_TOKEN || !email || email !== OWNER_EMAIL || !supplied) {
+      return res.status(401).json({ error: 'Invalid developer credentials' })
+    }
+    const a = Buffer.from(supplied)
+    const b = Buffer.from(OWNER_TOKEN)
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return res.status(401).json({ error: 'Invalid developer credentials' })
+    }
+    const session = jwt.sign(
+      { email: OWNER_EMAIL, developer_portal: true, role: 'developer' },
+      JWT_SECRET,
+      { expiresIn: '2h', issuer: 'saip-sync', audience: 'saip-developer-portal' }
+    )
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, token: session, user: { email: OWNER_EMAIL, name: 'SA Invoice Pro Developer', role: 'developer' }, expires_in: 7200 })
+  })
+
+  app.get('/api/dev/me', (req, res) => {
+    const header = req.headers.authorization || ''
+    const token = header.startsWith('Bearer ') ? header.slice(7) : ''
+    if (!token) return res.status(401).json({ error: 'Missing developer session' })
+    try {
+      const payload = jwt.verify(token, JWT_SECRET, {
+        issuer: 'saip-sync',
+        audience: 'saip-developer-portal',
+      })
+      if (payload.developer_portal !== true || payload.role !== 'developer' || payload.email !== OWNER_EMAIL) {
+        return res.status(403).json({ error: 'Developer access required' })
+      }
+      res.setHeader('Cache-Control', 'no-store')
+      return res.json({ ok: true, user: { email: OWNER_EMAIL, name: 'SA Invoice Pro Developer', role: 'developer' } })
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired developer session' })
+    }
   })
 
   function uuid() {
