@@ -266,7 +266,6 @@ app.patch('/api/admin/support/tickets/:id', auth, (req, res) => {
 
 app.get('/api/workspace/history', auth, (req, res) => res.json({ ok: true, history: [] }))
 app.post('/api/status/push', auth, (req, res) => res.json({ ok: true, count: 0 }))
-app.get('/api/notifications', auth, (req, res) => res.json({ ok: true, count: 0, unread: 0, notifications: [] }))
 app.get('/api/wa/pending', auth, (req, res) => res.json({ ok: true, count: 0, clients: [] }))
 
 app.get('/', (req, res) => {
@@ -314,10 +313,10 @@ app.post('/api/admin/git-flush', (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows', './workspace-reset']) {
+for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows', './workspace-reset', './devops']) {
   try {
     const mod = require(name)
-    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountClientPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mountWorkspaceReset || mod.mount
+    const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountClientPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mountWorkspaceReset || mod.mountDevops || mod.mount
     if (typeof fn === 'function') {
       try {
         fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
