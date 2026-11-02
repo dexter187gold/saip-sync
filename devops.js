@@ -7,7 +7,7 @@ const path = require('path')
 const jwt = require('jsonwebtoken')
 
 function mountDevops(app, ctx) {
-  const { DATA_DIR, JWT_SECRET, users, now = () => new Date().toISOString() } = ctx
+  const { DATA_DIR, JWT_SECRET, users, git, now = () => new Date().toISOString() } = ctx
   const file = path.join(DATA_DIR || path.join(__dirname, 'data'), 'announcements.json')
   let announcements = []
   try {
@@ -25,6 +25,7 @@ function mountDevops(app, ctx) {
       fs.writeFileSync(tmp, JSON.stringify(announcements.slice(0, 500), null, 2), 'utf8')
       fs.renameSync(tmp, file)
       global.__saip_announcements = announcements
+      git?.schedulePush?.('announcements')
       return true
     } catch (e) {
       console.error('[devops] announcement persistence failed:', e.message)
