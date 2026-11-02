@@ -1,5 +1,5 @@
 (function () {
-  var token = localStorage.getItem("saip_admin_token") || "";
+  var token = sessionStorage.getItem("saip_admin_token") || "";
   var currentTab = "dash";
   var usersCache = [];
 
@@ -37,6 +37,7 @@
 
   var TITLES = {
     dash: ["Dashboard", "Users & workspaces"],
+    control: ["Owner Control Centre", "Core SA Invoice Pro services and operations"],
     users: ["Users", "Add · role · reset password · remove"],
     invoices: ["Invoices", "All workspaces"],
     tickets: ["Tickets", "All workspaces"],
@@ -54,7 +55,7 @@
     var hs = document.getElementById("page-sub");
     if (ht) ht.textContent = t[0];
     if (hs) hs.textContent = t[1];
-    ["dash","users","invoices","tickets","clients","devices","portals","branches","system"].forEach(function (n) {
+    ["dash","control","users","invoices","tickets","clients","devices","portals","branches","system"].forEach(function (n) {
       var el = document.getElementById("panel-" + n);
       if (el) el.classList.toggle("hidden", n !== tab);
     });
@@ -66,7 +67,7 @@
   function goTab(tab) {
     setPage(tab);
     var loaders = {
-      dash: loadDash, users: loadUsers, invoices: loadInvoices, tickets: loadTickets,
+      dash: loadDash, control: function () { return Promise.resolve(); }, users: loadUsers, invoices: loadInvoices, tickets: loadTickets,
       clients: loadClients, devices: loadDevices, portals: loadPortals, branches: loadBranchesAdmin, system: loadSystem
     };
     if (loaders[tab]) loaders[tab]().catch(function (e) { toast(e.message); });
@@ -81,40 +82,35 @@
   function doLogin() {
     var button = document.getElementById("btn-login");
     var emailEl = document.getElementById("email");
-    var passwordEl = document.getElementById("password");
-    if (!emailEl || !passwordEl) { showErr("Sign-in form did not load correctly. Refresh this page."); return; }
-    var email = (emailEl.value || "").trim();
-    var password = passwordEl.value || "";
+    var tokenEl = document.getElementById("owner-token");
+    if (!emailEl || !tokenEl) { showErr("Owner sign-in form did not load correctly. Refresh this page."); return; }
+    var email = (emailEl.value || "").trim().toLowerCase();
+    var ownerToken = tokenEl.value || "";
     showErr("");
-    if (!email || !password) { showErr("Enter your email and password."); return; }
-    if (button) { button.disabled = true; button.textContent = "Signing in…"; }
-    fetch("/api/auth/login", {
+    if (!email || !ownerToken) { showErr("Enter the owner token."); return; }
+    if (button) { button.disabled = true; button.textContent = "Verifying owner…"; }
+    fetch("/api/admin/owner-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email, password: password })
+      body: JSON.stringify({ email: email, token: ownerToken })
     }).then(function (r) {
       return r.text().then(function (body) {
         var data;
         try { data = JSON.parse(body); } catch (_) { throw new Error("The server returned an unreadable response (HTTP " + r.status + ")."); }
-        if (!r.ok) throw new Error(data.error || "Sign-in failed (HTTP " + r.status + ").");
-        if (!data.token) throw new Error("The server did not return a sign-in token.");
-        return fetch("/api/admin/me", { headers: { Authorization: "Bearer " + data.token } })
-          .then(function (r2) { return r2.text().then(function (body2) {
-            var me;
-            try { me = JSON.parse(body2); } catch (_) { throw new Error("Could not verify administrator access (HTTP " + r2.status + ")."); }
-            if (!r2.ok) throw new Error(me.error || "This account does not have administrator access.");
-            return { token: data.token, me: me };
-          }); });
+        if (!r.ok) throw new Error(data.error || "Owner sign-in failed (HTTP " + r.status + ").");
+        if (!data.token) throw new Error("The server did not return a session token.");
+        return data;
       });
     }).then(function (result) {
       token = result.token;
-      localStorage.setItem("saip_admin_token", token);
+      try { sessionStorage.setItem("saip_admin_token", token); } catch (_) {}
+      tokenEl.value = "";
       showApp();
-      toast("Signed in");
+      toast("Owner session active · expires in 2 hours");
     }).catch(function (e) {
-      showErr(e && e.message ? e.message : "Sign-in failed. Please try again.");
+      showErr(e && e.message ? e.message : "Owner sign-in failed. Please try again.");
     }).finally(function () {
-      if (button) { button.disabled = false; button.textContent = "Sign in"; }
+      if (button) { button.disabled = false; button.textContent = "Sign in as owner"; }
     });
   }
 
@@ -368,12 +364,13 @@
   function boot() {
     var loginButton = document.getElementById("btn-login");
     if (loginButton) loginButton.addEventListener("click", doLogin);
-    document.getElementById("password").addEventListener("keydown", function (e) {
+    var tokenInput = document.getElementById("owner-token");
+    if (tokenInput) tokenInput.addEventListener("keydown", function (e) {
       if (e.key === "Enter") doLogin();
     });
     document.getElementById("btn-logout").addEventListener("click", function () {
       token = "";
-      localStorage.removeItem("saip_admin_token");
+      sessionStorage.removeItem("saip_admin_token");
       location.reload();
     });
     document.getElementById("btn-refresh").addEventListener("click", function () { goTab(currentTab); });
@@ -383,7 +380,7 @@
     if (token) {
       fetchJson("/api/admin/me").then(function () { showApp(); }).catch(function () {
         token = "";
-        localStorage.removeItem("saip_admin_token");
+        sessionStorage.removeItem("saip_admin_token");
       });
     }
   }

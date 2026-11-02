@@ -50,12 +50,13 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
   <div class="login-card">
     <h1 style="margin:0 0 8px;font-size:1.35rem">Admin portal</h1>
     <p style="color:var(--muted);margin:0 0 16px;font-size:14px">SA Invoice Pro Sync · multi-tenant</p>
-    <label style="display:block;font-size:13px;margin-bottom:4px">Email</label>
-    <input id="email" class="input" type="email" autocomplete="username" value="admin@sainvoice.pro"/>
-    <label style="display:block;font-size:13px;margin:12px 0 4px">Password</label>
-    <input id="password" class="input" type="password" autocomplete="current-password"/>
+    <label style="display:block;font-size:13px;margin-bottom:4px">Owner email</label>
+    <input id="email" class="input" type="email" autocomplete="username" value="sainvoicepro@gmail.com" readonly/>
+    <label style="display:block;font-size:13px;margin:12px 0 4px">SA Owner token</label>
+    <input id="owner-token" class="input" type="password" autocomplete="current-password" placeholder="Enter your owner token" required/>
+    <p style="color:var(--muted);font-size:12px;margin:8px 0 0">Owner access · secure server-side verification · session expires after 2 hours</p>
     <p id="login-err" style="color:var(--danger);font-size:13px;min-height:18px"></p>
-    <button type="button" class="btn" id="btn-login" onclick="window.SAIPAdminLogin && window.SAIPAdminLogin()" style="width:100%">Sign in</button>
+    <button type="button" class="btn" id="btn-login" style="width:100%">Sign in as owner</button>
   </div>
 </div>
 
@@ -71,6 +72,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
   <div class="layout">
     <aside class="side">
       <button type="button" class="tab on" data-tab="dash">Dashboard</button>
+      <button type="button" class="tab" data-tab="control">Control Centre</button>
       <button type="button" class="tab" data-tab="users">Users</button>
       <button type="button" class="tab" data-tab="invoices">Invoices</button>
       <button type="button" class="tab" data-tab="tickets">Tickets</button>
@@ -84,6 +86,18 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
       <h2 id="page-title">Dashboard</h2>
       <p id="page-sub" style="color:var(--muted);margin-top:0">Users & workspaces</p>
       <section id="panel-dash" class="panel"></section>
+      <section id="panel-control" class="panel hidden">
+        <div class="stat-grid">
+          <a class="card" href="https://saip-license.onrender.com" target="_blank" rel="noopener noreferrer"><strong>Licence Server</strong><p style="color:var(--muted);font-size:13px">Licence API and service status ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pcrepairdex.workers.dev/dev-portal" target="_blank" rel="noopener noreferrer"><strong>Developer Portal</strong><p style="color:var(--muted);font-size:13px">Developer tools and configuration ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pcrepairdex.workers.dev/portal-admin" target="_blank" rel="noopener noreferrer"><strong>Client Portal Admin</strong><p style="color:var(--muted);font-size:13px">Customer portal administration ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Live Application</strong><p style="color:var(--muted);font-size:13px">Open production app ↗</p></a>
+          <a class="card" href="https://dashboard.render.com/web/srv-db5k07vlk1mc73a9dtb0" target="_blank" rel="noopener noreferrer"><strong>Render · saip-sync</strong><p style="color:var(--muted);font-size:13px">Service, logs and environment ↗</p></a>
+          <a class="card" href="https://github.com/dexter187gold/sa-invoice-pro" target="_blank" rel="noopener noreferrer"><strong>GitHub · Application</strong><p style="color:var(--muted);font-size:13px">Source and production commits ↗</p></a>
+          <a class="card" href="https://github.com/dexter187gold/saip-sync" target="_blank" rel="noopener noreferrer"><strong>GitHub · Sync API</strong><p style="color:var(--muted);font-size:13px">Sync server source ↗</p></a>
+          <div class="card"><strong>Marketing Website</strong><p style="color:var(--muted);font-size:13px">Website URL needs confirmation before adding a live link.</p></div>
+        </div>
+      </section>
       <section id="panel-users" class="panel hidden"></section>
       <section id="panel-invoices" class="panel hidden"></section>
       <section id="panel-tickets" class="panel hidden"></section>
