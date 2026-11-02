@@ -148,18 +148,18 @@ function mountDevops(app, ctx) {
   app.post('/api/dev/releases/dispatch', developerAuth, async (req, res) => {
     const token = process.env.SAIP_GITHUB_TOKEN
     if (!token) return res.status(503).json({ error: 'Release controls are not configured yet. Add SAIP_GITHUB_TOKEN to Render saip-sync environment.' })
-    const ref = String(req.body?.ref || 'main')
-    if (!['main', 'beta'].includes(ref)) return res.status(400).json({ error: 'Only main and beta release channels are allowed' })
+    const channel = String(req.body?.channel || 'beta').toLowerCase()
+    if (!['main', 'beta', 'stable'].includes(channel)) return res.status(400).json({ error: 'Only beta and stable release channels are allowed' })
     const response = await fetch('https://api.github.com/repos/dexter187gold/sa-invoice-pro/actions/workflows/release.yml/dispatches', {
       method: 'POST',
       headers: githubHeaders(),
-      body: JSON.stringify({ ref }),
+      body: JSON.stringify({ ref: 'main', inputs: { channel: channel === 'main' ? 'stable' : channel } }),
     })
     if (!response.ok) {
       const detail = await response.text()
       return res.status(502).json({ error: 'GitHub rejected the release request', detail: detail.slice(0, 500) })
     }
-    res.status(202).json({ ok: true, message: 'Release workflow dispatched', ref, requestedAt: now() })
+    res.status(202).json({ ok: true, message: 'Release workflow dispatched', channel: channel === 'main' ? 'stable' : channel, ref: 'main', requestedAt: now() })
   })
 
   app.get('/api/dev/releases', developerAuth, async (_req, res) => {
