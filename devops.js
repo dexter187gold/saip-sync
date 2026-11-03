@@ -133,12 +133,193 @@ function mountDevops(app, ctx) {
     }
   }
 
+
+  const controlsFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'ops-controls.json')
+  const auditFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'ops-audit.json')
+  const incidentsFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'ops-incidents.json')
+  const defaultControls = {
+    maintenance: { enabled: false, message: 'SA Invoice Pro is undergoing scheduled maintenance. Please try again shortly.', updatedAt: null, updatedBy: null },
+    flags: { bankImport: true, clientPortal: true, betaFeatures: false, newDashboard: false },
+    updatedAt: null,
+    updatedBy: null,
+  }
+  let controls = JSON.parse(JSON.stringify(defaultControls))
+  let audit = []
+  let incidents = []
+  let controlsLoaded = false
+
+  function ensureControlsLoaded() {
+    if (controlsLoaded) return
+    try {
+      if (fs.existsSync(controlsFile)) {
+        const parsed = JSON.parse(fs.readFileSync(controlsFile, 'utf8'))
+        if (parsed && typeof parsed === 'object') controls = {
+          ...defaultControls,
+          ...parsed,
+          maintenance: { ...defaultControls.maintenance, ...(parsed.maintenance || {}) },
+          flags: { ...defaultControls.flags, ...(parsed.flags || {}) },
+        }
+      }
+    } catch (e) { console.warn('[devops] controls store could not be read:', e.message) }
+    try {
+      if (fs.existsSync(auditFile)) {
+        const parsed = JSON.parse(fs.readFileSync(auditFile, 'utf8'))
+        audit = Array.isArray(parsed) ? parsed.slice(0, 500) : []
+      }
+    } catch (e) { console.warn('[devops] audit store could not be read:', e.message) }
+    try {
+      if (fs.existsSync(incidentsFile)) {
+        const parsed = JSON.parse(fs.readFileSync(incidentsFile, 'utf8'))
+        incidents = Array.isArray(parsed) ? parsed.slice(0, 300) : []
+      }
+    } catch (e) { console.warn('[devops] incident store could not be read:', e.message) }
+    controlsLoaded = true
+  }
+
+  function writeJsonAtomic(target, value) {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    const tmp = target + '.tmp'
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8')
+    fs.renameSync(tmp, target)
+  }
+
+  function persistControls() {
+    try {
+      writeJsonAtomic(controlsFile, controls)
+      git?.schedulePush?.('ops-controls')
+      return true
+    } catch (e) { console.error('[devops] control persistence failed:', e.message); return false }
+  }
+
+  function persistIncidents() {
+    try { writeJsonAtomic(incidentsFile, incidents.slice(0, 300)); git?.schedulePush?.('ops-incidents'); return true }
+    catch (e) { console.error('[devops] incident persistence failed:', e.message); return false }
+  }
+
+  function recordAudit(action, details, actor) {
+    ensureControlsLoaded()
+    audit.unshift({ id: require('crypto').randomUUID(), action, details, actor: actor || 'unknown', createdAt: now() })
+    audit = audit.slice(0, 500)
+    try {
+      writeJsonAtomic(auditFile, audit)
+      git?.schedulePush?.('ops-audit')
+      return true
+    } catch (e) { console.error('[devops] audit persistence failed:', e.message); return false }
+  }
+
+  function publicSystemStatus() {
+    ensureControlsLoaded()
+    return {
+      maintenance: { enabled: controls.maintenance.enabled === true, message: controls.maintenance.message },
+      flags: { ...controls.flags },
+      updatedAt: controls.updatedAt,
+    }
+  }
+
   const active = (a) => a.active !== false && (!a.expiresAt || new Date(a.expiresAt).getTime() > Date.now())
   const githubHeaders = () => ({
     Authorization: 'Bearer ' + process.env.SAIP_GITHUB_TOKEN,
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
+  })
+
+
+  app.get('/api/system/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, status: publicSystemStatus() })
+  })
+
+  app.get('/api/dev/controls', developerAuth, (_req, res) => {
+    ensureControlsLoaded()
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, controls, audit: audit.slice(0, 100) })
+  })
+
+  app.patch('/api/dev/controls', developerAuth, (req, res) => {
+    ensureControlsLoaded()
+    const patch = req.body || {}
+    const changes = []
+    if (patch.maintenance && typeof patch.maintenance === 'object') {
+      if (typeof patch.maintenance.enabled === 'boolean' && patch.maintenance.enabled !== controls.maintenance.enabled) {
+        controls.maintenance.enabled = patch.maintenance.enabled
+        changes.push({ field: 'maintenance.enabled', value: patch.maintenance.enabled })
+      }
+      if (patch.maintenance.message != null) {
+        const message = String(patch.maintenance.message).trim().slice(0, 500)
+        if (message.length < 10) return res.status(400).json({ error: 'Maintenance message must be at least 10 characters' })
+        if (message !== controls.maintenance.message) {
+          controls.maintenance.message = message
+          changes.push({ field: 'maintenance.message', value: message })
+        }
+      }
+    }
+    if (patch.flags && typeof patch.flags === 'object') {
+      const allowed = Object.keys(defaultControls.flags)
+      for (const key of allowed) {
+        if (typeof patch.flags[key] === 'boolean' && patch.flags[key] !== controls.flags[key]) {
+          controls.flags[key] = patch.flags[key]
+          changes.push({ field: 'flags.' + key, value: patch.flags[key] })
+        }
+      }
+    }
+    if (!changes.length) return res.json({ ok: true, controls, audit: audit.slice(0, 100), unchanged: true })
+    controls.updatedAt = now()
+    controls.updatedBy = req.developer.email
+    if (patch.maintenance && changes.some((c) => c.field.startsWith('maintenance.'))) {
+      controls.maintenance.updatedAt = now()
+      controls.maintenance.updatedBy = req.developer.email
+    }
+    if (!persistControls()) return res.status(500).json({ error: 'Could not persist operational controls' })
+    recordAudit('controls.updated', { changes }, req.developer.email)
+    res.json({ ok: true, controls, audit: audit.slice(0, 100) })
+  })
+
+  app.get('/api/dev/incidents', developerAuth, (_req, res) => {
+    ensureControlsLoaded()
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, incidents })
+  })
+
+  app.post('/api/dev/incidents', developerAuth, (req, res) => {
+    ensureControlsLoaded()
+    const title = String(req.body?.title || '').trim().slice(0, 140)
+    const summary = String(req.body?.summary || '').trim().slice(0, 2000)
+    const severity = String(req.body?.severity || 'medium').toLowerCase()
+    if (title.length < 4 || summary.length < 10) return res.status(400).json({ error: 'Incident title and summary are required' })
+    if (!['low', 'medium', 'high', 'critical'].includes(severity)) return res.status(400).json({ error: 'Invalid incident severity' })
+    const incident = { id: require('crypto').randomUUID(), title, summary, severity, status: 'open', createdAt: now(), updatedAt: now(), createdBy: req.developer.email, resolvedAt: null, resolution: '' }
+    incidents.unshift(incident)
+    if (!persistIncidents()) { incidents.shift(); return res.status(500).json({ error: 'Could not save incident' }) }
+    recordAudit('incident.created', { id: incident.id, title, severity }, req.developer.email)
+    res.status(201).json({ ok: true, incident, incidents })
+  })
+
+  app.patch('/api/dev/incidents/:id', developerAuth, (req, res) => {
+    ensureControlsLoaded()
+    const incident = incidents.find((item) => item.id === req.params.id)
+    if (!incident) return res.status(404).json({ error: 'Incident not found' })
+    const changes = []
+    if (req.body?.status != null) {
+      const status = String(req.body.status).toLowerCase()
+      if (!['open', 'investigating', 'monitoring', 'resolved'].includes(status)) return res.status(400).json({ error: 'Invalid incident status' })
+      if (status !== incident.status) { incident.status = status; changes.push({ field: 'status', value: status }) }
+      incident.resolvedAt = status === 'resolved' ? now() : null
+    }
+    if (req.body?.resolution != null) {
+      incident.resolution = String(req.body.resolution).trim().slice(0, 2000)
+      changes.push({ field: 'resolution', value: incident.resolution })
+    }
+    incident.updatedAt = now()
+    if (!persistIncidents()) return res.status(500).json({ error: 'Could not update incident' })
+    if (changes.length) recordAudit('incident.updated', { id: incident.id, changes }, req.developer.email)
+    res.json({ ok: true, incident, incidents })
+  })
+
+  app.get('/api/dev/audit', developerAuth, (_req, res) => {
+    ensureControlsLoaded()
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, audit: audit.slice(0, 200) })
   })
 
   app.get('/api/dev/overview', developerAuth, async (_req, res) => {
