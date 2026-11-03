@@ -42,19 +42,7 @@ function upsertAdmin(users, workspaces, persistUsers, persistWorkspaces, now, em
     user.role = 'admin';
     changed = true;
   }
-  let needReset = forceReset;
-  if (!needReset && password) {
-    try {
-      if (!bcrypt.compareSync(password, user.password_hash)) {
-        if (key === DEFAULT_EMAIL) {
-          needReset = true;
-          console.log('[admin] Default password out of sync for', key, '— recovering');
-        }
-      }
-    } catch {
-      needReset = true;
-    }
-  }
+  const needReset = forceReset === true;
   if (needReset && password) {
     user.password_hash = bcrypt.hashSync(password, 10);
     user.updated_at = ts;
