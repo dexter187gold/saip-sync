@@ -5,12 +5,22 @@
 const fs = require('fs')
 const path = require('path')
 const jwt = require('jsonwebtoken')
+let webpush = null
+try { webpush = require('web-push') } catch { /* disabled until dependency is installed */ }
 
 function mountDevops(app, ctx) {
   const { DATA_DIR, JWT_SECRET, users, git, now = () => new Date().toISOString() } = ctx
   const file = path.join(DATA_DIR || path.join(__dirname, 'data'), 'announcements.json')
   let announcements = []
   let loaded = false
+  const subscriptionsFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'push-subscriptions.json')
+  let pushSubscriptions = []
+  let subscriptionsLoaded = false
+  const pushConfigured = !!(webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT)
+  if (pushConfigured) {
+    try { webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY) }
+    catch (e) { console.warn('[devops] Web Push configuration invalid:', e.message) }
+  }
   global.__saip_announcements = announcements
 
   // The server mounts this module before boot() pulls the Git-backed data repo.
@@ -44,6 +54,64 @@ function mountDevops(app, ctx) {
       console.error('[devops] announcement persistence failed:', e.message)
       return false
     }
+  }
+
+  function ensureSubscriptionsLoaded() {
+    if (subscriptionsLoaded) return
+    try {
+      if (fs.existsSync(subscriptionsFile)) {
+        const parsed = JSON.parse(fs.readFileSync(subscriptionsFile, 'utf8'))
+        pushSubscriptions = Array.isArray(parsed) ? parsed : []
+      }
+    } catch (e) {
+      console.warn('[devops] push subscription store could not be read:', e.message)
+      pushSubscriptions = []
+    }
+    subscriptionsLoaded = true
+  }
+
+  function persistSubscriptions() {
+    ensureSubscriptionsLoaded()
+    try {
+      fs.mkdirSync(path.dirname(subscriptionsFile), { recursive: true })
+      const tmp = subscriptionsFile + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(pushSubscriptions.slice(-10000), null, 2), 'utf8')
+      fs.renameSync(tmp, subscriptionsFile)
+      git?.schedulePush?.('push-subscriptions')
+      return true
+    } catch (e) {
+      console.error('[devops] push subscription persistence failed:', e.message)
+      return false
+    }
+  }
+
+  async function dispatchPush(announcement) {
+    ensureSubscriptionsLoaded()
+    if (!pushConfigured) return { configured: false, sent: 0, failed: 0 }
+    const payload = JSON.stringify({
+      title: announcement.title,
+      body: announcement.body,
+      severity: announcement.severity,
+      url: '/',
+      tag: 'saip-' + announcement.id,
+    })
+    let sent = 0
+    let failed = 0
+    const expired = new Set()
+    await Promise.all(pushSubscriptions.map(async (row) => {
+      try {
+        await webpush.sendNotification(row.subscription, payload, { TTL: 60 * 60, urgency: announcement.severity === 'critical' ? 'high' : 'normal' })
+        sent++
+      } catch (e) {
+        failed++
+        if (e.statusCode === 404 || e.statusCode === 410) expired.add(row.endpoint)
+      }
+    }))
+    if (expired.size) {
+      pushSubscriptions = pushSubscriptions.filter((row) => !expired.has(row.endpoint))
+      persistSubscriptions()
+    }
+    return { configured: true, sent, failed, removedExpired: expired.size }
   }
 
   function developerAuth(req, res, next) {
@@ -111,7 +179,7 @@ function mountDevops(app, ctx) {
     res.json({ ok: true, announcements })
   })
 
-  app.post('/api/dev/announcements', developerAuth, (req, res) => {
+  app.post('/api/dev/announcements', developerAuth, async (req, res) => {
     ensureLoaded()
     const title = String(req.body?.title || '').trim().slice(0, 120)
     const body = String(req.body?.body || '').trim().slice(0, 3000)
@@ -137,7 +205,8 @@ function mountDevops(app, ctx) {
       announcements.shift()
       return res.status(500).json({ error: 'Could not save broadcast. No alert was sent.' })
     }
-    res.status(201).json({ ok: true, announcement: item, deliveredTo: Object.keys(users || {}).length, delivery: 'in_app_broadcast' })
+    const push = await dispatchPush(item)
+    res.status(201).json({ ok: true, announcement: item, deliveredTo: Object.keys(users || {}).length, delivery: push.configured ? 'in_app_and_web_push' : 'in_app_only', push })
   })
 
   app.patch('/api/dev/announcements/:id', developerAuth, (req, res) => {
@@ -206,6 +275,40 @@ function mountDevops(app, ctx) {
       read: Array.isArray(a.readBy) && a.readBy.includes(email),
     }))
     res.json({ ok: true, count: items.length, unread: items.filter((n) => !n.read).length, notifications: items })
+  })
+
+  app.get('/api/push/config', ctx.auth, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, enabled: pushConfigured, publicKey: pushConfigured ? process.env.VAPID_PUBLIC_KEY : null })
+  })
+
+  app.post('/api/push/subscribe', ctx.auth, (req, res) => {
+    ensureSubscriptionsLoaded()
+    if (!pushConfigured) return res.status(503).json({ error: 'Browser push is not configured on the sync server yet' })
+    const subscription = req.body?.subscription
+    const endpoint = String(subscription?.endpoint || '')
+    const p256dh = String(subscription?.keys?.p256dh || '')
+    const authKey = String(subscription?.keys?.auth || '')
+    if (!endpoint.startsWith('https://') || endpoint.length > 2048 || !p256dh || !authKey) {
+      return res.status(400).json({ error: 'A valid browser push subscription is required' })
+    }
+    const userId = String(req.user?.id || '')
+    if (!userId) return res.status(401).json({ error: 'Sign in required' })
+    pushSubscriptions = pushSubscriptions.filter((row) => row.endpoint !== endpoint && !(row.userId === userId && row.createdAt && Date.now() - new Date(row.createdAt).getTime() > 365 * 86400000))
+    const existingForUser = pushSubscriptions.filter((row) => row.userId === userId)
+    if (existingForUser.length >= 10) return res.status(429).json({ error: 'This account has reached its 10-device notification limit' })
+    pushSubscriptions.push({ userId, endpoint, subscription: { endpoint, keys: { p256dh, auth: authKey } }, createdAt: now() })
+    if (!persistSubscriptions()) return res.status(500).json({ error: 'Could not save this device subscription' })
+    res.status(201).json({ ok: true })
+  })
+
+  app.delete('/api/push/subscribe', ctx.auth, (req, res) => {
+    ensureSubscriptionsLoaded()
+    const endpoint = String(req.body?.endpoint || '')
+    const before = pushSubscriptions.length
+    pushSubscriptions = pushSubscriptions.filter((row) => !(row.userId === req.user?.id && row.endpoint === endpoint))
+    if (before !== pushSubscriptions.length) persistSubscriptions()
+    res.json({ ok: true, removed: before - pushSubscriptions.length })
   })
 
   app.post('/api/notifications/read', ctx.auth, (req, res) => {
