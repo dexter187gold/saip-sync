@@ -16,9 +16,9 @@ function mountDevops(app, ctx) {
   const subscriptionsFile = path.join(DATA_DIR || path.join(__dirname, 'data'), 'push-subscriptions.json')
   let pushSubscriptions = []
   let subscriptionsLoaded = false
-  const pushConfigured = !!(webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT)
-  if (pushConfigured) {
-    try { webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY) }
+  let pushConfigured = false
+  if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT) {
+    try { webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY); pushConfigured = true }
     catch (e) { console.warn('[devops] Web Push configuration invalid:', e.message) }
   }
   global.__saip_announcements = announcements
@@ -98,15 +98,18 @@ function mountDevops(app, ctx) {
     let sent = 0
     let failed = 0
     const expired = new Set()
-    await Promise.all(pushSubscriptions.map(async (row) => {
-      try {
-        await webpush.sendNotification(row.subscription, payload, { TTL: 60 * 60, urgency: announcement.severity === 'critical' ? 'high' : 'normal' })
-        sent++
-      } catch (e) {
-        failed++
-        if (e.statusCode === 404 || e.statusCode === 410) expired.add(row.endpoint)
-      }
-    }))
+    for (let i = 0; i < pushSubscriptions.length; i += 50) {
+      const batch = pushSubscriptions.slice(i, i + 50)
+      await Promise.all(batch.map(async (row) => {
+        try {
+          await webpush.sendNotification(row.subscription, payload, { TTL: 60 * 60, urgency: announcement.severity === 'critical' ? 'high' : 'normal' })
+          sent++
+        } catch (e) {
+          failed++
+          if (e.statusCode === 404 || e.statusCode === 410) expired.add(row.endpoint)
+        }
+      }))
+    }
     if (expired.size) {
       pushSubscriptions = pushSubscriptions.filter((row) => !expired.has(row.endpoint))
       persistSubscriptions()
@@ -140,6 +143,7 @@ function mountDevops(app, ctx) {
 
   app.get('/api/dev/overview', developerAuth, async (_req, res) => {
     ensureLoaded()
+    ensureSubscriptionsLoaded()
     let release = { configured: false, latest: null, workflow: null }
     if (process.env.SAIP_GITHUB_TOKEN) {
       release.configured = true
@@ -163,6 +167,7 @@ function mountDevops(app, ctx) {
         totalAnnouncements: announcements.length,
         release,
         githubConfigured: !!process.env.SAIP_GITHUB_TOKEN,
+        push: { configured: pushConfigured, subscriptions: pushSubscriptions.length },
         services: [
           { name: 'Sync API', url: 'https://saip-sync.onrender.com/health' },
           { name: 'Production app', url: 'https://sa-invoice-pro.pcrepairdex.workers.dev' },
