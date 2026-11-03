@@ -36,6 +36,7 @@ const DATA_JSON_FILES = [
   'client_portal_accounts.json',
   'support-tickets.json',
   'announcements.json',
+  'push-subscriptions.json',
   'workspace_reset_snapshots.json',
   'workspace_reset_audit.json',
 ]
