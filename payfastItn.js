@@ -43,7 +43,7 @@ function mountPayfastItn(app, ctx) {
     const body = req.body || {}
     const merchantId = String(process.env.PAYFAST_MERCHANT_ID || '').trim()
     const passphrase = String(process.env.PAYFAST_PASSPHRASE || '')
-    const sandbox = String(process.env.PAYFAST_SANDBOX || '').toLowerCase() === 'true'
+    const sandbox = String(process.env.PAYFAST_SANDBOX || 'true').toLowerCase() === 'true'
     if (!merchantId || !passphrase) {
       return res.status(503).send('PayFast server verification is not configured')
     }
