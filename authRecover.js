@@ -18,36 +18,13 @@ function mountAuthRecover(app, ctx) {
   const jwt = require('jsonwebtoken')
 
   // Only add recover if not already present
-  app.post('/api/auth/recover', loginRateLimit || ((_r, _s, n) => n()), (req, res) => {
-    const emailKey = safeEmail(req.body?.email) || ''
-    const recovery_code = String(req.body?.recovery_code || req.body?.code || '').trim()
-    const password = req.body?.password || req.body?.newPassword
-    if (!emailKey || !recovery_code || !password) {
-      return res.status(400).json({ error: 'Email, recovery code, and new password required' })
-    }
-    const rp = strongPassword(password)
-    if (!rp.ok) return res.status(400).json({ error: rp.error })
-    const rec = passwordResets['code:' + emailKey + ':' + recovery_code]
-    if (!rec || rec.used) {
-      return res.status(400).json({ error: 'Invalid or already used recovery code — request a new one via Forgot password' })
-    }
-    if (new Date(rec.expires) < new Date()) {
-      return res.status(400).json({ error: 'Recovery code expired — request a new one' })
-    }
-    const user = users[rec.email]
-    if (!user) return res.status(400).json({ error: 'User no longer exists' })
-    user.password_hash = bcrypt.hashSync(password, 10)
-    user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
-    rec.used = true
-    if (rec.token && passwordResets[rec.token]) passwordResets[rec.token].used = true
-    if (typeof persistUsers === 'function') persistUsers()
-    if (typeof persistResets === 'function') persistResets()
-    const jwtToken = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
-    res.json({
-      ok: true,
-      message: 'Password updated — signed in. Pull cloud profile on the app.',
-      token: jwtToken,
-      user: { id: user.id, email: user.email, name: user.name },
+  app.post('/api/auth/recover', loginRateLimit || ((_r, _s, n) => n()), (_req, res) => {
+    // Recovery codes were previously returned to the requester and are not
+    // safe credentials. Keep this legacy route closed until private delivery
+    // of high-entropy, single-use reset tokens is implemented.
+    res.setHeader('Cache-Control', 'no-store')
+    return res.status(503).json({
+      error: 'Password recovery is temporarily unavailable. Please contact your workspace administrator for a secure reset.',
     })
   })
 

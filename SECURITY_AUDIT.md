@@ -1,36 +1,25 @@
-# SAIP Security Audit — v5.2.0 Pro Studio Q2
+# SA Invoice Pro Sync — Security remediation status
 
-## Findings (pre-fix) → Mitigations
+## Fixed in the security hardening change
+- The server refuses to start when `JWT_SECRET` is absent or shorter than 32 characters.
+- Automatic administrator seeding is disabled unless `ADMIN_EMAIL` and `ADMIN_PASSWORD` are explicitly configured.
+- Existing administrator password hashes are not overwritten during startup.
+- Public forgot-password no longer creates or returns a recovery code.
+- The legacy six-digit recovery endpoint is closed. The reset endpoint accepts only a private high-entropy token.
+- Recovery responses are marked `Cache-Control: no-store`.
 
-| # | Severity | Issue | Fix in 5.2 |
-|---|----------|-------|------------|
-| 1 | High | `forgot-password` returned `reset_url` with raw token | Generic response; token only logged server-side |
-| 2 | High | Default `JWT_SECRET` if env missing | Console warn; set `JWT_SECRET` on Render |
-| 3 | High | Hardcoded status API token in source | Prefer `STATUS_API_TOKEN` env; rotate via Admin Secrets |
-| 4 | Medium | CORS `*` on all routes | Locked to SAIP / localhost / Capacitor origins |
-| 5 | Medium | No login rate limit | 12 attempts / 15 min per IP+email |
-| 6 | Medium | Weak password min 6 | Register/reset require 8+ with letter+number |
-| 7 | Medium | 15mb JSON body (DoS) | Limit 8mb JSON / 1mb urlencoded |
-| 8 | Low | `X-Powered-By: Express` | Removed |
-| 9 | Low | Notifications not owner-scoped | Filter by `owner_user_id` |
+## Operational requirements before enabling self-service recovery
+- Configure a transactional email provider with verified sender identity.
+- Deliver high-entropy reset tokens privately; never include them in API responses or logs.
+- Store only a hash of each reset token; enforce expiry, single use, rate limits and generic account-enumeration-resistant responses.
+- Add tests for email delivery failure, expiry, replay, invalid tokens and user enumeration.
 
-## What is NOT a bypass
+## Production deployment checklist
+- Confirm `JWT_SECRET` is set to a unique random value of at least 32 characters in Render before deploying.
+- Confirm `ADMIN_EMAIL` and `ADMIN_PASSWORD` are set if a new administrator must be seeded. Existing administrator hashes remain unchanged.
+- Do not rotate `JWT_SECRET` casually: doing so invalidates all outstanding sessions.
+- Use the existing authenticated admin password-reset route for manual recovery until private email delivery is implemented.
+- Keep PayFast inactive; Paystack is the active payment-provider roadmap.
 
-- Admin routes require JWT + admin role/email — live probe returns `Missing token`
-- `/.env`, `/data/users.json` → 404
-- Status endpoints require known status token
-
-## Required env on Render
-
-```
-JWT_SECRET=<long random>
-ADMIN_PASSWORD=Admin@SAIP2026!
-ADMIN_EMAIL=pcrepairdex@gmail.com
-STATUS_API_TOKEN=<rotate from default>
-CORS_ORIGINS=https://your-frontend.example,http://localhost:5173
-```
-
-## Admin login (verified live)
-
-- Email: `admin@sainvoice.pro`
-- Password: `Admin@SAIP2026!` (case-sensitive, capital A)
+## Data safety
+This change does not modify user records, workspace records, invoices, payments, bank statements or Git-backed business data.

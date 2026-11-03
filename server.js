@@ -47,12 +47,15 @@ try {
 
 const app = express()
 const PORT = process.env.PORT || 3847
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const JWT_SECRET = String(process.env.JWT_SECRET || '').trim()
+if (JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET is required and must contain at least 32 characters. Configure it in the deployment environment before starting SAIP Sync.')
+}
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com'
 const RESET_TOKEN_HOURS = 1
-const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
-const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
-const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '')
+const USING_DEFAULT_ADMIN_PASSWORD = !ADMIN_PASSWORD
+const USING_DEFAULT_JWT = false
 const VERSION = '6.46.1'
 
 const DATA_DIR = path.join(__dirname, 'data')
@@ -114,23 +117,32 @@ function requireSupportAdmin(req, res) {
 function now() { return new Date().toISOString() }
 
 function seedAdmin() {
-  const defaults = ['admin@sainvoice.pro']
-  const envEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
-  if (envEmail && !defaults.includes(envEmail)) defaults.push(envEmail)
+  const defaults = []
+  const configuredEmail = String(process.env.ADMIN_EMAIL || '').toLowerCase().trim()
+  if (configuredEmail) defaults.push(configuredEmail)
+  if (!ADMIN_PASSWORD) {
+    console.warn('[admin] ADMIN_PASSWORD is not configured; automatic admin seeding is disabled')
+    return
+  }
+  let usersChanged = false
+  let workspacesChanged = false
   for (const key of defaults) {
     if (!users[key]) {
       const id = uuidv4()
-      users[key] = { id, email: key, password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10), name: 'Administrator', role: 'admin', created_at: now(), updated_at: now() }
+      users[key] = { id, email: key, password_hash: bcrypt.hashSync(ADMIN_PASSWORD, 12), name: 'Administrator', role: 'admin', created_at: now(), updated_at: now() }
       workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: now() }
-      console.log('[admin] seeded', key)
-    } else {
-      let changed = false
-      if (users[key].role !== 'admin') { users[key].role = 'admin'; changed = true }
-      if (!users[key].password_hash) { users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10); changed = true }
-      if (changed) users[key].updated_at = now()
+      usersChanged = true
+      workspacesChanged = true
+      console.log('[admin] seeded configured administrator:', key)
+    } else if (!users[key].password_hash) {
+      users[key].password_hash = bcrypt.hashSync(ADMIN_PASSWORD, 12)
+      users[key].updated_at = now()
+      usersChanged = true
+      console.log('[admin] added missing password hash for configured administrator:', key)
     }
   }
-  persistUsers(); persistWorkspaces()
+  if (usersChanged) persistUsers()
+  if (workspacesChanged) persistWorkspaces()
 }
 
 mountSecurity(app, {})
@@ -181,16 +193,14 @@ app.get('/api/auth/me', auth, (req, res) => {
 
 app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
   const email = safeEmail(req.body?.email) || ''
-  if (!email) return res.status(400).json({ error: 'Email required' })
-  const user = users[email]
-  if (!user) return res.json({ ok: true, message: 'If registered, a recovery code was issued.', expires_in_hours: RESET_TOKEN_HOURS })
-  const token = crypto.randomBytes(32).toString('hex')
-  const recovery_code = String(crypto.randomInt(100000, 999999))
-  const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString()
-  passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code }
-  passwordResets['code:' + email + ':' + recovery_code] = { email, expires, used: false, created_at: now(), token, recovery_code }
-  persistResets()
-  res.json({ ok: true, message: 'Recovery code created.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
+  if (!email) return res.status(400).json({ error: 'Valid email required' })
+  // Fail closed: no reset credential is created or returned until private email
+  // delivery is configured. Returning a code in this response exposed accounts.
+  res.setHeader('Cache-Control', 'no-store')
+  return res.status(202).json({
+    ok: true,
+    message: 'Password recovery is temporarily unavailable. Please contact your workspace administrator for a secure reset.',
+  })
 })
 
 app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
@@ -199,11 +209,13 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   const recovery_code = String(req.body?.recovery_code || req.body?.code || '').trim()
   const emailKey = safeEmail(req.body?.email) || ''
   if (!password) return res.status(400).json({ error: 'Password required' })
+  if (!token) return res.status(400).json({ error: 'A valid private reset token is required' })
   const rp = strongPassword(password)
   if (!rp.ok) return res.status(400).json({ error: rp.error })
   let rec = null
   if (token && passwordResets[token]) rec = passwordResets[token]
-  else if (emailKey && recovery_code) rec = passwordResets['code:' + emailKey + ':' + recovery_code]
+  // Low-entropy recovery codes are deliberately no longer accepted. Only a
+  // high-entropy, privately delivered reset token may be used.
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used recovery code' })
   if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Recovery code expired' })
   const user = users[rec.email]
