@@ -6,6 +6,10 @@ function hasWorkspaceData(row) {
     .some((key) => Array.isArray(data[key]) && data[key].length > 0)
 }
 
+function isReadOnlyTeamMember(user) {
+  return Boolean(user?.linkedWorkspaceOwnerId && String(user.teamRole || '').toLowerCase() === 'viewer')
+}
+
 function resolveWorkspaceKey({ user, tokenUser, workspaces = {} } = {}) {
   // Team members intentionally share the owner's workspace; preserve that link.
   if (user && user.linkedWorkspaceOwnerId) return user.linkedWorkspaceOwnerId
@@ -34,4 +38,4 @@ function resolveWorkspaceKey({ user, tokenUser, workspaces = {} } = {}) {
   return id || null
 }
 
-module.exports = { resolveWorkspaceKey }
+module.exports = { resolveWorkspaceKey, isReadOnlyTeamMember }
