@@ -143,3 +143,35 @@ test('reset requires correct PIN and exact confirmation; then clears only this t
   assert.deepEqual(tickets.map((ticket) => ticket.id), ['member-ticket', 'other-ticket'])
   assert.ok(h.pushes.includes('workspace-reset'))
 })
+
+
+test('failed multi-file reset rolls back staged files and leaves live workspace unchanged', async (t) => {
+  const h = harness(t)
+  await h.call('/api/workspace/reset-pin', {
+    pin: '135790', confirmPin: '135790', currentPassword: 'owner-password',
+  })
+  const before = JSON.parse(fs.readFileSync(path.join(h.dir, 'workspaces.json'), 'utf8'))
+  const originalRename = fs.renameSync
+  let injected = false
+  fs.renameSync = function (source, destination) {
+    if (!injected && destination === path.join(h.dir, 'workspaces.json')) {
+      injected = true
+      throw new Error('simulated atomic commit failure')
+    }
+    return originalRename.call(this, source, destination)
+  }
+  let result
+  try {
+    result = await h.call('/api/workspace/reset', {
+      pin: '135790', confirmation: 'RESET MY WORKSPACE',
+    })
+  } finally {
+    fs.renameSync = originalRename
+  }
+  assert.equal(injected, true)
+  assert.equal(result.statusCode, 500)
+  assert.equal(h.workspaces['owner-1'].data.invoices[0].id, 'i1')
+  const after = JSON.parse(fs.readFileSync(path.join(h.dir, 'workspaces.json'), 'utf8'))
+  assert.deepEqual(after, before)
+  assert.equal(fs.existsSync(path.join(h.dir, 'workspace_reset_snapshots.json')), false)
+})
