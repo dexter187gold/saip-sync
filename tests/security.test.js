@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { mountSecurity } = require('../security')
+const { mountSecurity, isSessionVersionValid } = require('../security')
 
 function runCors(origin, method = 'GET') {
   const middleware = []
@@ -48,4 +48,14 @@ test('does not grant hostile origins access through preflight headers', () => {
   assert.equal(result.headers['access-control-allow-origin'], undefined)
   assert.equal(result.ended, true)
   assert.equal(result.statusCode, 204)
+})
+
+test('session version validation rejects tokens after a password reset or logout', () => {
+  const user = { id: 'user-1', session_version: 0 }
+  assert.equal(isSessionVersionValid({ id: 'user-1' }, user), true)
+  assert.equal(isSessionVersionValid({ id: 'user-1', sv: 0 }, user), true)
+  user.session_version = 1
+  assert.equal(isSessionVersionValid({ id: 'user-1', sv: 0 }, user), false)
+  assert.equal(isSessionVersionValid({ id: 'user-1', sv: 1 }, user), true)
+  assert.equal(isSessionVersionValid(null, user), false)
 })
