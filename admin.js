@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const { isSessionIdentityValid } = require('./security')
 
 function mountAdmin(app, ctx) {
   const {
@@ -37,8 +38,8 @@ function mountAdmin(app, ctx) {
         req.user = { id: 'owner-control-centre', email: OWNER_EMAIL, name: 'SA Invoice Pro Owner', role: 'admin' }
         return next()
       }
-      const user = Object.values(users).find((u) => u.id === payload.id || u.email === payload.email)
-      if (!user || user.role !== 'admin' || Number(payload.sv || 0) !== Number(user.session_version || 0)) return res.status(403).json({ error: 'Admin access denied or session revoked' })
+      const user = Object.values(users).find((u) => u.id === payload.id)
+      if (!user || user.role !== 'admin' || !isSessionIdentityValid(payload, user)) return res.status(403).json({ error: 'Admin access denied or session revoked' })
       req.user = user
       next()
     } catch {
