@@ -78,3 +78,12 @@ test('owner cannot alter a member of another workspace', async (t) => {
   const result = await h.call('/api/team/member-role', { userId: 'member-2', role: 'admin' })
   assert.equal(result.statusCode, 404)
 })
+
+test('new team invites use high-entropy codes and an approved role', async (t) => {
+  const h = harness()
+  t.after(() => fs.rmSync(h.dir, { recursive: true, force: true }))
+  const result = await h.call('/api/team/invite', { role: 'front_desk' })
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.payload.role, 'front_desk')
+  assert.match(result.payload.code, /^[a-f0-9]{32}$/)
+})
