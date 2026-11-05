@@ -3,6 +3,7 @@
  * Mounted from server optional loop as mountAuthRecover
  */
 const crypto = require('crypto')
+const { consumeRecoveryRecords } = require('./recovery-records')
 
 function mountAuthRecover(app, ctx) {
   const {
@@ -30,7 +31,7 @@ function mountAuthRecover(app, ctx) {
     const rp = strongPassword(password)
     if (!rp.ok) return res.status(400).json({ error: rp.error })
     const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex')
-    const rec = passwordResets['code:' + emailKey + ':' + codeHash] || passwordResets['code:' + emailKey + ':' + recovery_code]
+    const rec = passwordResets['code:' + emailKey + ':' + codeHash]
     if (!rec || rec.used) {
       return res.status(400).json({ error: 'Invalid or already used recovery code — request a new one via Forgot password' })
     }
@@ -42,8 +43,7 @@ function mountAuthRecover(app, ctx) {
     user.password_hash = bcrypt.hashSync(password, 10)
     user.session_version = Number(user.session_version || 0) + 1
     user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
-    rec.used = true
-    if (rec.token && passwordResets[rec.token]) passwordResets[rec.token].used = true
+    consumeRecoveryRecords(passwordResets, rec)
     if (typeof persistUsers === 'function') persistUsers()
     if (typeof persistResets === 'function') persistResets()
     const jwtToken = jwt.sign({ id: user.id, email: user.email, sv: Number(user.session_version || 0) }, JWT_SECRET, { expiresIn: '90d' })
