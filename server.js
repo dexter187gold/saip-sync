@@ -137,6 +137,9 @@ function auth(req, res, next) {
     if (!user || Number(decoded.sv || 0) !== Number(user.session_version || 0)) {
       return res.status(401).json({ error: 'Session revoked. Please sign in again.' })
     }
+    if (String(decoded.email || '').trim().toLowerCase() !== String(user.email || '').trim().toLowerCase()) {
+      return res.status(401).json({ error: 'Account identity changed. Please sign in again.' })
+    }
     req.user = decoded
     next()
   } catch { return res.status(401).json({ error: 'Invalid or expired token' }) }
