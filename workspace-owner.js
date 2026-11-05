@@ -67,7 +67,10 @@ function filterTeamWorkspaceData(data, role) {
 function mergeTeamWorkspaceData(currentData, incomingData, role) {
   const current = currentData && typeof currentData === 'object' && !Array.isArray(currentData) ? currentData : {}
   const incoming = incomingData && typeof incomingData === 'object' && !Array.isArray(incomingData) ? incomingData : {}
-  const allowed = new Set(TEAM_DATA_KEYS[String(role || '').toLowerCase()] || [])
+  const normalizedRole = String(role || '').toLowerCase()
+  // Enforce viewer read-only semantics in the data layer as well as the route.
+  if (normalizedRole === 'viewer') return current
+  const allowed = new Set(TEAM_DATA_KEYS[normalizedRole] || [])
   const merged = { ...current }
   for (const key of allowed) {
     if (Object.prototype.hasOwnProperty.call(incoming, key)) merged[key] = incoming[key]
