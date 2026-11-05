@@ -2,6 +2,8 @@
  * Auth recovery helpers — clearer errors + /api/auth/recover
  * Mounted from server optional loop as mountAuthRecover
  */
+const crypto = require('crypto')
+
 function mountAuthRecover(app, ctx) {
   const {
     users,
@@ -27,7 +29,8 @@ function mountAuthRecover(app, ctx) {
     }
     const rp = strongPassword(password)
     if (!rp.ok) return res.status(400).json({ error: rp.error })
-    const rec = passwordResets['code:' + emailKey + ':' + recovery_code]
+    const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex')
+    const rec = passwordResets['code:' + emailKey + ':' + codeHash] || passwordResets['code:' + emailKey + ':' + recovery_code]
     if (!rec || rec.used) {
       return res.status(400).json({ error: 'Invalid or already used recovery code — request a new one via Forgot password' })
     }
