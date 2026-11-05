@@ -12,38 +12,13 @@ const fs = require('fs')
 const { createGitStore, GIT_ENABLED } = require('./git-store')
 const { resolveWorkspaceKey } = require('./workspace-owner')
 
-let mountSecurity, loginRateLimit, registerRateLimit, strongPassword, safeEmail
-try {
-  ;({ mountSecurity, loginRateLimit, registerRateLimit, strongPassword, safeEmail } = require('./security'))
-} catch {
-  mountSecurity = (app) => {
-    app.use((req, res, next) => {
-      const origin = req.headers.origin
-      if (origin) {
-        res.setHeader('Access-Control-Allow-Origin', origin)
-        res.setHeader('Vary', 'Origin')
-        res.setHeader('Access-Control-Allow-Credentials', 'true')
-      } else res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-      if (req.method === 'OPTIONS') return res.status(204).end()
-      next()
-    })
-  }
-  loginRateLimit = registerRateLimit = (_r, _s, n) => n()
-  strongPassword = (pw) => {
-    const s = String(pw || '')
-    if (s.length < 8) return { ok: false, error: 'Password must be at least 8 characters' }
-    if (!/[A-Za-z]/.test(s) || !/[0-9]/.test(s)) return { ok: false, error: 'Password must include letters and numbers' }
-    return { ok: true }
-  }
-  safeEmail = (email) => {
-    const e = String(email || '').toLowerCase().trim()
-    if (!e || e.length > 254) return null
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return null
-    return e
-  }
-}
+const {
+  mountSecurity,
+  loginRateLimit,
+  registerRateLimit,
+  strongPassword,
+  safeEmail,
+} = require('./security')
 
 const app = express()
 const PORT = process.env.PORT || 3847
