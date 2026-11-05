@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { mountSecurity, isSessionVersionValid } = require('../security')
+const { mountSecurity, isSessionVersionValid, clientIp } = require('../security')
 
 function runCors(origin, method = 'GET') {
   const middleware = []
@@ -100,4 +100,13 @@ test('admin APIs reject an admin JWT after its account session version changes',
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('rate-limit identity ignores spoofed X-Forwarded-For values', () => {
+  assert.equal(clientIp({ headers: { 'x-forwarded-for': '198.51.100.7' }, ip: '203.0.113.9', socket: { remoteAddress: '203.0.113.9' } }), '203.0.113.9')
+})
+
+test('CORS preflight explicitly permits owner-token header for trusted origins', () => {
+  const result = runCors('https://sa-invoice-pro.pages.dev', 'OPTIONS')
+  assert.match(result.headers['access-control-allow-headers'], /X-Owner-Token/i)
 })
