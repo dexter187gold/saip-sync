@@ -35,6 +35,14 @@ test('does not reflect an arbitrary hostile origin', () => {
   assert.equal(result.nextCalled, true)
 })
 
+test('does not trust arbitrary customer subdomains on shared hosting platforms', () => {
+  for (const origin of ['https://attacker.pages.dev', 'https://attacker.onrender.com', 'https://attacker.vercel.app']) {
+    const result = runCors(origin)
+    assert.equal(result.headers['access-control-allow-origin'], undefined, origin)
+    assert.equal(result.headers['access-control-allow-credentials'], undefined, origin)
+  }
+})
+
 test('does not grant hostile origins access through preflight headers', () => {
   const result = runCors('https://attacker.example', 'OPTIONS')
   assert.equal(result.headers['access-control-allow-origin'], undefined)
