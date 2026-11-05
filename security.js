@@ -30,21 +30,18 @@ function rateLimit(key, max, windowMs) {
 
 function isAllowedOrigin(origin) {
   if (!origin) return false;
-  try {
-    const u = new URL(origin);
-    const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1') return true;
-    if (host.endsWith('.pages.dev')) return true;
-    if (host.endsWith('.onrender.com')) return true;
-    if (host.endsWith('.netlify.app')) return true;
-    if (host.endsWith('.vercel.app')) return true;
-    if (host.endsWith('sainvoice.pro') || host === 'sainvoice.pro') return true;
-    if (host.endsWith('github.io')) return true;
-    if (origin.startsWith('capacitor://') || origin.startsWith('ionic://')) return true;
-    return false;
-  } catch {
-    return /capacitor:\/\//i.test(origin) || /ionic:\/\//i.test(origin);
-  }
+  const fixedOrigins = new Set([
+    'https://sa-invoice-pro.pages.dev',
+    'https://sa-invoice-pro-client-portal.pages.dev',
+    'https://saip-sync.onrender.com',
+    'https://saip-license.onrender.com',
+    'https://sa-invoice-license.onrender.com',
+    'capacitor://localhost',
+    'ionic://localhost',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ]);
+  return fixedOrigins.has(String(origin).replace(/\\/$/, ''));
 }
 
 function mountSecurity(app, opts = {}) {
