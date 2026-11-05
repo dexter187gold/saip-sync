@@ -10,7 +10,7 @@ const { v4: uuidv4 } = require('uuid')
 const path = require('path')
 const fs = require('fs')
 const { createGitStore, GIT_ENABLED } = require('./git-store')
-const { resolveWorkspaceKey, isReadOnlyTeamMember } = require('./workspace-owner')
+const { resolveWorkspaceKey, isReadOnlyTeamMember, isTeamMember, filterTeamWorkspaceData, mergeTeamWorkspaceData } = require('./workspace-owner')
 const { consumeRecoveryRecords } = require('./recovery-records')
 
 const {
@@ -246,7 +246,8 @@ app.get('/api/workspace', auth, (req, res) => {
   const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces })
   const row = ownerId ? workspaces[ownerId] : null
   if (!row) return res.status(404).json({ error: 'No workspace' })
-  res.json({ ok: true, version: row.version, updated_at: row.updated_at, data: row.data, ownerId })
+  const data = isTeamMember(me) ? filterTeamWorkspaceData(row.data, me.teamRole) : row.data
+  res.json({ ok: true, version: row.version, updated_at: row.updated_at, data, ownerId })
 })
 
 app.put('/api/workspace', auth, (req, res) => {
@@ -257,10 +258,11 @@ app.put('/api/workspace', auth, (req, res) => {
     return res.status(403).json({ error: 'This workspace role is read-only' })
   }
   const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces }) || req.user.id
-  const current = workspaces[ownerId] || { version: 0 }
+  const current = workspaces[ownerId] || { version: 0, data: {} }
   const newVersion = (current.version || 0) + 1
   const ts = now()
-  workspaces[ownerId] = { data, version: newVersion, updated_at: ts }
+  const savedData = isTeamMember(me) ? mergeTeamWorkspaceData(current.data, data, me.teamRole) : data
+  workspaces[ownerId] = { data: savedData, version: newVersion, updated_at: ts }
   persistWorkspaces()
   res.json({ ok: true, version: newVersion, updated_at: ts, ownerId })
 })
