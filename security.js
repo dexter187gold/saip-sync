@@ -120,6 +120,11 @@ function strongPassword(pw) {
   return { ok: true };
 }
 
+function isSessionVersionValid(decoded, user) {
+  if (!decoded || !user) return false
+  return Number(decoded.sv || 0) === Number(user.session_version || 0)
+}
+
 function safeEmail(email) {
   const e = String(email || '').toLowerCase().trim();
   if (!e || e.length > 254) return null;
@@ -145,4 +150,5 @@ module.exports = {
   safeEmail,
   clientIp,
   timingSafeEqualStr,
+  isSessionVersionValid,
 };
