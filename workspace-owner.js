@@ -39,3 +39,42 @@ function resolveWorkspaceKey({ user, tokenUser, workspaces = {} } = {}) {
 }
 
 module.exports = { resolveWorkspaceKey, isReadOnlyTeamMember }
+
+const TEAM_DATA_KEYS = Object.freeze({
+  admin: ['clients', 'invoices', 'quotes', 'tickets', 'payments', 'products', 'services', 'expenses', 'company', 'inventory', 'jobs', 'documents', 'employees', 'payslips', 'purchaseOrders', 'estimates', 'workOrders', 'assets', 'recurringInvoices', 'taxes', 'bankTransactions', 'cashbook', 'pettyCash', 'categories', 'templates', 'notes', 'reminders', 'supportTickets', 'communications', 'branding'],
+  manager: ['clients', 'invoices', 'quotes', 'tickets', 'payments', 'products', 'services', 'expenses', 'company', 'inventory', 'jobs', 'documents', 'employees', 'payslips', 'purchaseOrders', 'estimates', 'workOrders', 'assets', 'recurringInvoices', 'taxes', 'bankTransactions', 'cashbook', 'pettyCash', 'categories', 'templates', 'notes', 'reminders', 'supportTickets', 'communications', 'branding'],
+  front_desk: ['clients', 'invoices', 'quotes', 'payments', 'tickets', 'company'],
+  helpdesk: ['clients', 'tickets', 'supportTickets', 'company'],
+  tech: ['clients', 'tickets', 'products', 'services', 'jobs', 'workOrders', 'assets', 'company'],
+  accountant: ['clients', 'invoices', 'quotes', 'payments', 'expenses', 'products', 'services', 'purchaseOrders', 'taxes', 'bankTransactions', 'cashbook', 'pettyCash', 'company'],
+  viewer: ['clients', 'invoices', 'quotes', 'tickets', 'payments', 'products', 'services', 'expenses', 'company', 'inventory', 'jobs', 'documents', 'employees', 'payslips', 'purchaseOrders', 'estimates', 'workOrders', 'assets', 'recurringInvoices', 'taxes', 'bankTransactions', 'cashbook', 'pettyCash', 'categories', 'templates', 'notes', 'reminders', 'supportTickets', 'communications', 'branding'],
+})
+
+function isTeamMember(user) {
+  return Boolean(user?.linkedWorkspaceOwnerId)
+}
+
+function filterTeamWorkspaceData(data, role) {
+  const allowed = TEAM_DATA_KEYS[String(role || '').toLowerCase()] || []
+  const source = data && typeof data === 'object' && !Array.isArray(data) ? data : {}
+  const filtered = {}
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) filtered[key] = source[key]
+  }
+  return filtered
+}
+
+function mergeTeamWorkspaceData(currentData, incomingData, role) {
+  const current = currentData && typeof currentData === 'object' && !Array.isArray(currentData) ? currentData : {}
+  const incoming = incomingData && typeof incomingData === 'object' && !Array.isArray(incomingData) ? incomingData : {}
+  const allowed = new Set(TEAM_DATA_KEYS[String(role || '').toLowerCase()] || [])
+  const merged = { ...current }
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(incoming, key)) merged[key] = incoming[key]
+  }
+  return merged
+}
+
+module.exports.isTeamMember = isTeamMember
+module.exports.filterTeamWorkspaceData = filterTeamWorkspaceData
+module.exports.mergeTeamWorkspaceData = mergeTeamWorkspaceData
