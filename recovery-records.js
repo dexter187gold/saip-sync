@@ -6,7 +6,15 @@
 function consumeRecoveryRecords(passwordResets, selectedRecord) {
   if (!passwordResets || !selectedRecord) return
   const email = String(selectedRecord.email || '').toLowerCase()
-  const token = String(selectedRecord.token || '')
+  let token = String(selectedRecord.token || '')
+  if (!token) {
+    for (const [key, record] of Object.entries(passwordResets)) {
+      if (record === selectedRecord && !key.startsWith('code:')) {
+        token = key
+        break
+      }
+    }
+  }
   for (const [key, record] of Object.entries(passwordResets)) {
     if (record === selectedRecord ||
         (email && String(record?.email || '').toLowerCase() === email &&
