@@ -16,7 +16,10 @@ function resolveWorkspaceKey({ user, tokenUser, workspaces = {} } = {}) {
 
   const id = user?.id || tokenUser?.id
   const idRow = id ? workspaces[id] : null
-  const emails = [user?.email, tokenUser?.email]
+  // The database user is authoritative. A stale or inconsistent JWT email
+  // must never redirect an authenticated ID to another legacy email workspace.
+  const authoritativeEmail = user?.email || tokenUser?.email
+  const emails = [authoritativeEmail]
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean)
   const keys = Object.keys(workspaces)
