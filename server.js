@@ -22,6 +22,10 @@ const {
 } = require('./security')
 
 const app = express()
+// Render terminates TLS and appends the client address to X-Forwarded-For.
+// Trust exactly that single proxy hop; rate limiting then uses Express req.ip,
+// never a caller-controlled header value.
+app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3847
 const JWT_SECRET = String(process.env.JWT_SECRET || '')
 const LEGACY_DEFAULT_ADMIN_PASSWORD = 'Admin@SAIP2026!'
