@@ -22,12 +22,13 @@ const {
 
 const app = express()
 const PORT = process.env.PORT || 3847
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const JWT_SECRET = String(process.env.JWT_SECRET || '')
+const LEGACY_DEFAULT_ADMIN_PASSWORD = 'Admin@SAIP2026!'
 const PUBLIC_BASE = process.env.PUBLIC_BASE_URL || 'https://saip-sync.onrender.com'
 const RESET_TOKEN_HOURS = 1
-const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@SAIP2026!'
-const USING_DEFAULT_ADMIN_PASSWORD = !process.env.ADMIN_PASSWORD
-const USING_DEFAULT_JWT = !process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me'
+const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '')
+const USING_DEFAULT_ADMIN_PASSWORD = !DEFAULT_ADMIN_PASSWORD
+const USING_DEFAULT_JWT = !JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET === 'dev-secret-change-me'
 const VERSION = '6.46.1'
 
 const DATA_DIR = path.join(__dirname, 'data')
@@ -102,6 +103,11 @@ function seedAdmin() {
       let changed = false
       if (users[key].role !== 'admin') { users[key].role = 'admin'; changed = true }
       if (!users[key].password_hash) { users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10); changed = true }
+      else if (bcrypt.compareSync(LEGACY_DEFAULT_ADMIN_PASSWORD, users[key].password_hash)) {
+        users[key].password_hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10)
+        changed = true
+        console.log('[admin] migrated legacy default password for', key)
+      }
       if (changed) users[key].updated_at = now()
     }
   }
@@ -112,12 +118,23 @@ mountSecurity(app, {})
 app.use(express.json({ limit: '8mb' }))
 app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
+function issueSessionToken(user) {
+  return jwt.sign({ id: user.id, email: user.email, sv: Number(user.session_version || 0) }, JWT_SECRET, { expiresIn: '90d' })
+}
+
 function auth(req, res, next) {
   const header = req.headers.authorization || ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   if (!token) return res.status(401).json({ error: 'Missing token' })
-  try { req.user = jwt.verify(token, JWT_SECRET); next() }
-  catch { return res.status(401).json({ error: 'Invalid or expired token' }) }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET)
+    const user = Object.values(users).find((u) => u.id === decoded.id)
+    if (!user || Number(decoded.sv || 0) !== Number(user.session_version || 0)) {
+      return res.status(401).json({ error: 'Session revoked. Please sign in again.' })
+    }
+    req.user = decoded
+    next()
+  } catch { return res.status(401).json({ error: 'Invalid or expired token' }) }
 }
 
 app.post('/api/auth/register', registerRateLimit, (req, res) => {
@@ -133,7 +150,7 @@ app.post('/api/auth/register', registerRateLimit, (req, res) => {
   users[key] = { id, email: key, password_hash: hash, name: name || null, role: 'user', created_at: ts, updated_at: ts }
   workspaces[id] = { data: { clients: [], invoices: [], tickets: [], settings: {} }, version: 1, updated_at: ts }
   persistUsers(); persistWorkspaces()
-  const token = jwt.sign({ id, email: key }, JWT_SECRET, { expiresIn: '90d' })
+  const token = issueSessionToken(users[key])
   res.json({ ok: true, token, user: { id, email: key, name: name || null } })
 })
 
@@ -144,7 +161,7 @@ app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const user = users[key]
   const ok = user && bcrypt.compareSync(password, user.password_hash)
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
-  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
+  const token = issueSessionToken(user)
   res.json({ ok: true, token, user: { id: user.id, email: user.email, name: user.name } })
 })
 
@@ -152,6 +169,15 @@ app.get('/api/auth/me', auth, (req, res) => {
   const user = Object.values(users).find((u) => u.id === req.user.id)
   if (!user) return res.status(404).json({ error: 'User not found' })
   res.json({ ok: true, user: { id: user.id, email: user.email, name: user.name } })
+})
+
+app.post('/api/auth/logout', auth, (req, res) => {
+  const user = Object.values(users).find((u) => u.id === req.user.id)
+  if (!user) return res.status(401).json({ error: 'Account not found' })
+  user.session_version = Number(user.session_version || 0) + 1
+  user.updated_at = now()
+  persistUsers()
+  res.json({ ok: true, message: 'Session revoked. Sign in again to continue.' })
 })
 
 app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
@@ -187,7 +213,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   user.updated_at = now()
   rec.used = true
   persistUsers(); persistResets()
-  const jwtToken = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
+  const jwtToken = issueSessionToken(user)
   res.json({ ok: true, message: 'Password updated', token: jwtToken, user: { id: user.id, email: user.email, name: user.name } })
 })
 
@@ -271,8 +297,8 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/health', (_req, res) => {
   const warnings = []
-  if (USING_DEFAULT_JWT) warnings.push('Set JWT_SECRET')
-  if (USING_DEFAULT_ADMIN_PASSWORD) warnings.push('Set ADMIN_PASSWORD')
+  if (USING_DEFAULT_JWT) warnings.push('JWT_SECRET is missing or weak')
+  if (USING_DEFAULT_ADMIN_PASSWORD) warnings.push('ADMIN_PASSWORD is missing')
   res.json({ ok: true, version: VERSION, ts: now(), users: Object.keys(users).length, warnings, git: { enabled: gitMeta.enabled, lastPushAt: gitMeta.lastPushAt } })
 })
 
@@ -302,6 +328,8 @@ for (const name of ['./authRecover', './payfastItn', './portal', './client-porta
 }
 
 async function boot() {
+  if (USING_DEFAULT_JWT) throw new Error('Refusing to start: configure a random JWT_SECRET of at least 32 characters')
+  if (USING_DEFAULT_ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD.length < 12) throw new Error('Refusing to start: configure ADMIN_PASSWORD with at least 12 characters')
   console.log(`[saip-sync] v${VERSION} starting…`)
   await git.initOrPull()
   reloadFromDisk()
