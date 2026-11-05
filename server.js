@@ -19,6 +19,7 @@ const {
   registerRateLimit,
   strongPassword,
   safeEmail,
+  isSessionIdentityValid,
 } = require('./security')
 
 const app = express()
@@ -134,11 +135,8 @@ function auth(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET)
     const user = Object.values(users).find((u) => u.id === decoded.id)
-    if (!user || Number(decoded.sv || 0) !== Number(user.session_version || 0)) {
-      return res.status(401).json({ error: 'Session revoked. Please sign in again.' })
-    }
-    if (String(decoded.email || '').trim().toLowerCase() !== String(user.email || '').trim().toLowerCase()) {
-      return res.status(401).json({ error: 'Account identity changed. Please sign in again.' })
+    if (!isSessionIdentityValid(decoded, user)) {
+      return res.status(401).json({ error: 'Session revoked or account identity changed. Please sign in again.' })
     }
     req.user = decoded
     next()
