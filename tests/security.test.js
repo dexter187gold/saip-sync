@@ -59,3 +59,45 @@ test('session version validation rejects tokens after a password reset or logout
   assert.equal(isSessionVersionValid({ id: 'user-1', sv: 1 }, user), true)
   assert.equal(isSessionVersionValid(null, user), false)
 })
+
+test('admin APIs reject an admin JWT after its account session version changes', () => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const jwt = require('jsonwebtoken')
+  const { mountAdmin } = require('../admin')
+  const secret = 'test-admin-session-secret-at-least-32-characters'
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saip-admin-session-'))
+  try {
+    const users = {
+      'admin@example.com': { id: 'admin-1', email: 'admin@example.com', role: 'admin', session_version: 1 },
+    }
+    const routes = new Map()
+    const app = {
+      get(route, ...handlers) { routes.set('GET ' + route, handlers) },
+      post(route, ...handlers) { routes.set('POST ' + route, handlers) },
+      patch(route, ...handlers) { routes.set('PATCH ' + route, handlers) },
+      put(route, ...handlers) { routes.set('PUT ' + route, handlers) },
+      delete(route, ...handlers) { routes.set('DELETE ' + route, handlers) },
+    }
+    mountAdmin(app, {
+      users, workspaces: {}, persistUsers() {}, persistWorkspaces() {},
+      auth(_req, _res, next) { next() }, JWT_SECRET: secret,
+      PUBLIC_BASE: 'https://saip-sync.example', now: () => new Date().toISOString(),
+      git: null, gitMeta: {}, strongPassword: () => ({ ok: true }),
+      safeEmail: (value) => String(value || '').toLowerCase(),
+      DATA_DIR: dir, loginRateLimit(_req, _res, next) { next() },
+    })
+    const [adminAuth, handler] = routes.get('GET /api/admin/stats')
+    const token = jwt.sign({ id: 'admin-1', email: 'admin@example.com', sv: 0 }, secret)
+    const req = { headers: { authorization: 'Bearer ' + token } }
+    let statusCode = 200
+    let nextCalled = false
+    const res = { status(code) { statusCode = code; return this }, json() { return this } }
+    adminAuth(req, res, () => { nextCalled = true; handler(req, res) })
+    assert.equal(nextCalled, false)
+    assert.equal(statusCode, 403)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
