@@ -239,6 +239,7 @@ function mountAdmin(app, ctx) {
     const pw = String(req.body?.password || '')
     if (pw.length < 12) return res.status(400).json({ error: 'Provide a new password of at least 12 characters' })
     user.password_hash = bcrypt.hashSync(pw, 12)
+    user.session_version = Number(user.session_version || 0) + 1
     user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
     persistUsers()
     res.json({ ok: true, message: 'Password reset. Share the new password through a trusted channel; it is not returned by the server.' })
