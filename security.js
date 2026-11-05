@@ -12,8 +12,8 @@ const GLOBAL_MAX = 180;
 const buckets = new Map();
 
 function clientIp(req) {
-  const xf = req.headers['x-forwarded-for'];
-  if (xf) return String(xf).split(',')[0].trim();
+  // Do not trust caller-supplied X-Forwarded-For: clients can spoof it to rotate rate-limit buckets.
+  // Express req.ip is derived from the socket unless trusted proxy handling is explicitly configured.
   return req.ip || req.socket?.remoteAddress || 'unknown';
 }
 
@@ -78,7 +78,7 @@ function mountSecurity(app, opts = {}) {
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, X-Status-Token, X-Requested-With'
+      'Content-Type, Authorization, X-Status-Token, X-Owner-Token, X-Requested-With'
     );
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
