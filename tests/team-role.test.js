@@ -87,3 +87,10 @@ test('new team invites use high-entropy codes and an approved role', async (t) =
   assert.equal(result.payload.role, 'front_desk')
   assert.match(result.payload.code, /^[a-f0-9]{32}$/)
 })
+
+test('owner invite endpoint rejects unsupported team roles', async (t) => {
+  const h = harness()
+  t.after(() => fs.rmSync(h.dir, { recursive: true, force: true }))
+  const result = await h.call('/api/team/invite', { role: 'not-a-role' })
+  assert.equal(result.statusCode, 400)
+})
