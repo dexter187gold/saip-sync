@@ -180,14 +180,35 @@ app.post('/api/auth/logout', auth, (req, res) => {
   res.json({ ok: true, message: 'Session revoked. Sign in again to continue.' })
 })
 
-app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
+async function deliverRecoveryCode(email, code) {
+  const apiKey = String(process.env.RESEND_API_KEY || '').trim()
+  const from = String(process.env.RESEND_FROM_EMAIL || '').trim()
+  if (!apiKey || !from) return false
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: 'SA Invoice Pro password recovery',
+      text: 'Your SA Invoice Pro recovery code is ' + code + '. It expires in one hour. If you did not request this, ignore this email.',
+    }),
+  })
+  return response.ok
+}
+
+app.post('/api/auth/forgot-password', loginRateLimit, async (req, res) => {
   const email = safeEmail(req.body?.email) || ''
   if (!email) return res.status(400).json({ error: 'Email required' })
+  const genericRecoveryResponse = () => ({ ok: true, message: 'If the account exists, recovery instructions will be sent.', expires_in_hours: RESET_TOKEN_HOURS })
   const user = users[email]
-  if (!user) return res.json({ ok: true, message: 'If registered, a recovery code was issued.', expires_in_hours: RESET_TOKEN_HOURS })
+  if (!user) return res.json(genericRecoveryResponse())
   const token = crypto.randomBytes(32).toString('hex')
   const recovery_code = String(crypto.randomInt(100000, 999999))
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString()
+  let delivered = false
+  try { delivered = await deliverRecoveryCode(email, recovery_code) } catch (e) { console.warn('[auth] recovery email delivery failed', e.message) }
+  if (!delivered) return res.json(genericRecoveryResponse())
   const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex')
   passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code_hash: codeHash }
   passwordResets['code:' + email + ':' + codeHash] = { email, expires, used: false, created_at: now(), token, recovery_code_hash: codeHash }
