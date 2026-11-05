@@ -37,12 +37,13 @@ function mountAuthRecover(app, ctx) {
     const user = users[rec.email]
     if (!user) return res.status(400).json({ error: 'User no longer exists' })
     user.password_hash = bcrypt.hashSync(password, 10)
+    user.session_version = Number(user.session_version || 0) + 1
     user.updated_at = typeof now === 'function' ? now() : new Date().toISOString()
     rec.used = true
     if (rec.token && passwordResets[rec.token]) passwordResets[rec.token].used = true
     if (typeof persistUsers === 'function') persistUsers()
     if (typeof persistResets === 'function') persistResets()
-    const jwtToken = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '90d' })
+    const jwtToken = jwt.sign({ id: user.id, email: user.email, sv: Number(user.session_version || 0) }, JWT_SECRET, { expiresIn: '90d' })
     res.json({
       ok: true,
       message: 'Password updated — signed in. Pull cloud profile on the app.',
