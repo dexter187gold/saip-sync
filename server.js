@@ -307,10 +307,8 @@ app.get('/ready', (_req, res) => {
   res.status(gitOk ? 200 : 503).json({ ok: gitOk, version: VERSION, users: Object.keys(users).length })
 })
 
-app.post('/api/admin/git-flush', (req, res) => {
-  const header = req.headers.authorization || ''
-  if (!header.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing token' })
-  try { jwt.verify(header.slice(7), JWT_SECRET) } catch { return res.status(401).json({ error: 'Invalid token' }) }
+app.post('/api/admin/git-flush', auth, (req, res) => {
+  if (!requireSupportAdmin(req, res)) return
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
