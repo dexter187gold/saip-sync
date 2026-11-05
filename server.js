@@ -10,7 +10,7 @@ const { v4: uuidv4 } = require('uuid')
 const path = require('path')
 const fs = require('fs')
 const { createGitStore, GIT_ENABLED } = require('./git-store')
-const { resolveWorkspaceKey } = require('./workspace-owner')
+const { resolveWorkspaceKey, isReadOnlyTeamMember } = require('./workspace-owner')
 
 const {
   mountSecurity,
@@ -251,7 +251,7 @@ app.put('/api/workspace', auth, (req, res) => {
   const { data } = req.body || {}
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' })
   const me = Object.values(users).find((u) => u.id === req.user.id)
-  if (me?.linkedWorkspaceOwnerId && String(me.teamRole || '').toLowerCase() === 'viewer') {
+  if (isReadOnlyTeamMember(me)) {
     return res.status(403).json({ error: 'This workspace role is read-only' })
   }
   const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces }) || req.user.id
