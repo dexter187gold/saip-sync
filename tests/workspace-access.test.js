@@ -41,3 +41,18 @@ test('unknown team role fails closed', () => {
   assert.deepEqual(filterTeamWorkspaceData(current, 'unexpected'), {})
   assert.deepEqual(mergeTeamWorkspaceData(current, { clients: [] }, 'unexpected'), current)
 })
+
+
+test('account switching cannot redirect a populated account to another email-keyed tenant', () => {
+  const workspaces = {
+    'owner-a': { data: { clients: [{ id: 'a-client' }] } },
+    'b@example.com': { data: { clients: [{ id: 'b-client' }] } },
+  }
+  const resolved = resolveWorkspaceKey({
+    user: { id: 'owner-a', email: 'a@example.com' },
+    tokenUser: { id: 'owner-a', email: 'b@example.com' },
+    workspaces,
+  })
+  assert.equal(resolved, 'owner-a')
+  assert.deepEqual(workspaces[resolved].data.clients, [{ id: 'a-client' }])
+})
