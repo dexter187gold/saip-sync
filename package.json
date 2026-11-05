@@ -4,7 +4,7 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/audit-report.js && node server.js",
     "dev": "node server.js",
     "test": "node --test",
     "audit:report": "node scripts/audit-report.js"
