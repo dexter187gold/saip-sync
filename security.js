@@ -125,6 +125,12 @@ function isSessionVersionValid(decoded, user) {
   return Number(decoded.sv || 0) === Number(user.session_version || 0)
 }
 
+function isSessionIdentityValid(decoded, user) {
+  if (!isSessionVersionValid(decoded, user)) return false
+  return String(decoded.id || '') === String(user.id || '') &&
+    String(decoded.email || '').trim().toLowerCase() === String(user.email || '').trim().toLowerCase()
+}
+
 function safeEmail(email) {
   const e = String(email || '').toLowerCase().trim();
   if (!e || e.length > 254) return null;
@@ -151,4 +157,5 @@ module.exports = {
   clientIp,
   timingSafeEqualStr,
   isSessionVersionValid,
+  isSessionIdentityValid,
 };
