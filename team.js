@@ -67,8 +67,10 @@ function mountTeam(app, ctx) {
     const me = userById(req.user.id)
     if (!me) return res.status(404).json({ error: 'User not found' })
     if (me.linkedWorkspaceOwnerId) return res.status(403).json({ error: 'Only the workspace owner can create invites' })
-    const role = String(req.body?.role || 'tech').slice(0, 32)
-    const code = crypto.randomBytes(4).toString('hex')
+    const allowedRoles = new Set(['admin', 'manager', 'front_desk', 'helpdesk', 'tech', 'accountant', 'viewer'])
+    const role = String(req.body?.role || 'tech').trim().toLowerCase()
+    if (!allowedRoles.has(role)) return res.status(400).json({ error: 'Invalid team role' })
+    const code = crypto.randomBytes(16).toString('hex')
     const expires = new Date(Date.now() + 7 * 86400000).toISOString()
     invites[code] = {
       ownerId: me.id, ownerEmail: me.email, role, expires,
