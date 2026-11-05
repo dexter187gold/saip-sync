@@ -188,10 +188,11 @@ app.post('/api/auth/forgot-password', loginRateLimit, (req, res) => {
   const token = crypto.randomBytes(32).toString('hex')
   const recovery_code = String(crypto.randomInt(100000, 999999))
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString()
-  passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code }
-  passwordResets['code:' + email + ':' + recovery_code] = { email, expires, used: false, created_at: now(), token, recovery_code }
+  const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex')
+  passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code_hash: codeHash }
+  passwordResets['code:' + email + ':' + codeHash] = { email, expires, used: false, created_at: now(), token, recovery_code_hash: codeHash }
   persistResets()
-  res.json({ ok: true, message: 'Recovery code created.', recovery_code, expires_in_hours: RESET_TOKEN_HOURS })
+  res.json({ ok: true, message: 'If the account exists, recovery instructions will be sent.', expires_in_hours: RESET_TOKEN_HOURS })
 })
 
 app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
@@ -204,7 +205,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   if (!rp.ok) return res.status(400).json({ error: rp.error })
   let rec = null
   if (token && passwordResets[token]) rec = passwordResets[token]
-  else if (emailKey && recovery_code) rec = passwordResets['code:' + emailKey + ':' + recovery_code]
+  else if (emailKey && recovery_code) { const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex'); rec = passwordResets['code:' + emailKey + ':' + codeHash] || passwordResets['code:' + emailKey + ':' + recovery_code] }
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used recovery code' })
   if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Recovery code expired' })
   const user = users[rec.email]
