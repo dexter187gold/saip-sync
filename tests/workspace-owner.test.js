@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { resolveWorkspaceKey } = require('../workspace-owner')
+const { resolveWorkspaceKey, isReadOnlyTeamMember } = require('../workspace-owner')
 
 test('prefers the populated user-ID workspace over a legacy email workspace', () => {
   assert.equal(resolveWorkspaceKey({
@@ -54,4 +54,10 @@ test('returns the user ID when no workspace exists yet', () => {
     tokenUser: { id: 'new-user', email: 'new@example.com' },
     workspaces: {},
   }), 'new-user')
+})
+
+test('viewer team role is read-only while other linked roles can write', () => {
+  assert.equal(isReadOnlyTeamMember({ id: 'viewer-1', linkedWorkspaceOwnerId: 'owner-1', teamRole: 'viewer' }), true)
+  assert.equal(isReadOnlyTeamMember({ id: 'tech-1', linkedWorkspaceOwnerId: 'owner-1', teamRole: 'tech' }), false)
+  assert.equal(isReadOnlyTeamMember({ id: 'owner-1', teamRole: 'viewer' }), false)
 })
