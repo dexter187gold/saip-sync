@@ -77,11 +77,6 @@ function mountSecurity(app, opts = {}) {
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else if (!origin) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-    } else {
-      // permissive fallback so new deploy hosts work without server redeploy
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader(
