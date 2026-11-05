@@ -11,6 +11,7 @@ const path = require('path')
 const fs = require('fs')
 const { createGitStore, GIT_ENABLED } = require('./git-store')
 const { resolveWorkspaceKey, isReadOnlyTeamMember } = require('./workspace-owner')
+const { consumeRecoveryRecords } = require('./recovery-records')
 
 const {
   mountSecurity,
@@ -226,14 +227,15 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
   if (!rp.ok) return res.status(400).json({ error: rp.error })
   let rec = null
   if (token && passwordResets[token]) rec = passwordResets[token]
-  else if (emailKey && recovery_code) { const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex'); rec = passwordResets['code:' + emailKey + ':' + codeHash] || passwordResets['code:' + emailKey + ':' + recovery_code] }
+  else if (emailKey && recovery_code) { const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex'); rec = passwordResets['code:' + emailKey + ':' + codeHash] }
   if (!rec || rec.used) return res.status(400).json({ error: 'Invalid or already used recovery code' })
   if (new Date(rec.expires) < new Date()) return res.status(400).json({ error: 'Recovery code expired' })
   const user = users[rec.email]
   if (!user) return res.status(400).json({ error: 'User no longer exists' })
   user.password_hash = bcrypt.hashSync(password, 10)
+  user.session_version = Number(user.session_version || 0) + 1
   user.updated_at = now()
-  rec.used = true
+  consumeRecoveryRecords(passwordResets, rec)
   persistUsers(); persistResets()
   const jwtToken = issueSessionToken(user)
   res.json({ ok: true, message: 'Password updated', token: jwtToken, user: { id: user.id, email: user.email, name: user.name } })
