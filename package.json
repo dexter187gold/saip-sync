@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "audit:report": "node scripts/audit-report.js",
+    "prestart": "node scripts/audit-report.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
