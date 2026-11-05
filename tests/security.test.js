@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { mountSecurity, isSessionVersionValid, clientIp } = require('../security')
+const { mountSecurity, isSessionVersionValid, isSessionIdentityValid, clientIp } = require('../security')
 
 function runCors(origin, method = 'GET') {
   const middleware = []
@@ -109,4 +109,12 @@ test('rate-limit identity ignores spoofed X-Forwarded-For values', () => {
 test('CORS preflight explicitly permits owner-token header for trusted origins', () => {
   const result = runCors('https://sa-invoice-pro.pages.dev', 'OPTIONS')
   assert.match(result.headers['access-control-allow-headers'], /X-Owner-Token/i)
+})
+
+test('session identity validation rejects mismatched account email and user ID', () => {
+  const user = { id: 'account-a', email: 'a@example.com', session_version: 3 }
+  assert.equal(isSessionIdentityValid({ id: 'account-a', email: 'a@example.com', sv: 3 }, user), true)
+  assert.equal(isSessionIdentityValid({ id: 'account-a', email: 'b@example.com', sv: 3 }, user), false)
+  assert.equal(isSessionIdentityValid({ id: 'account-b', email: 'a@example.com', sv: 3 }, user), false)
+  assert.equal(isSessionIdentityValid({ id: 'account-a', email: 'a@example.com', sv: 2 }, user), false)
 })
