@@ -38,7 +38,7 @@ function mountAdmin(app, ctx) {
         return next()
       }
       const user = Object.values(users).find((u) => u.id === payload.id || u.email === payload.email)
-      if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin only' })
+      if (!user || user.role !== 'admin' || Number(payload.sv || 0) !== Number(user.session_version || 0)) return res.status(403).json({ error: 'Admin access denied or session revoked' })
       req.user = user
       next()
     } catch {
