@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="robots" content="noindex,nofollow"/>
 <meta name="theme-color" content="#0b1220"/>
-<title>Admin · SA Invoice Pro Sync</title>
+<title>Owner &amp; User Admin · SA Invoice Pro</title>
 <style>
 :root, [data-theme="dark"] {
   --bg:#0b1220; --bg-elevated:#111827; --surface:#151c2c; --surface-2:#1a2336;
@@ -48,8 +48,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
 <body>
 <div id="login" class="login-shell">
   <div class="login-card">
-    <h1 style="margin:0 0 8px;font-size:1.35rem">Admin portal</h1>
-    <p style="color:var(--muted);margin:0 0 16px;font-size:14px">SA Invoice Pro Sync · multi-tenant</p>
+    <h1 style="margin:0 0 8px;font-size:1.35rem">Owner &amp; User Admin Console</h1>
+    <p style="color:var(--muted);margin:0 0 16px;font-size:14px">Owner access · account and workspace administration</p>
     <label style="display:block;font-size:13px;margin-bottom:4px">Owner email</label>
     <input id="email" class="input" type="email" autocomplete="username" value="sainvoicepro@gmail.com" readonly/>
     <label style="display:block;font-size:13px;margin:12px 0 4px">SA Owner token</label>
@@ -62,7 +62,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
 
 <div id="app" class="app">
   <header class="topbar">
-    <strong>SAIP Admin</strong>
+    <strong>SAIP Owner Admin</strong>
     <div style="display:flex;gap:8px;align-items:center">
       <span id="git-badge" style="font-size:12px;color:var(--muted)">—</span>
       <button type="button" class="btn btn-outline" id="btn-refresh">Refresh</button>
@@ -88,14 +88,29 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
       <section id="panel-dash" class="panel"></section>
       <section id="panel-control" class="panel hidden">
         <div class="stat-grid">
-          <a class="card" href="https://saip-license.onrender.com" target="_blank" rel="noopener noreferrer"><strong>Licence Server</strong><p style="color:var(--muted);font-size:13px">Licence API and service status ↗</p></a>
-          <a class="card" href="https://sa-invoice-pro.pcrepairdex.workers.dev/dev-portal" target="_blank" rel="noopener noreferrer"><strong>Developer Portal</strong><p style="color:var(--muted);font-size:13px">Developer tools and configuration ↗</p></a>
-          <a class="card" href="https://sa-invoice-pro.pcrepairdex.workers.dev/portal-admin" target="_blank" rel="noopener noreferrer"><strong>Client Portal Admin</strong><p style="color:var(--muted);font-size:13px">Customer portal administration ↗</p></a>
-          <a class="card" href="https://sa-invoice-pro.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Live Application</strong><p style="color:var(--muted);font-size:13px">Open production app ↗</p></a>
-          <a class="card" href="https://dashboard.render.com/web/srv-db5k07vlk1mc73a9dtb0" target="_blank" rel="noopener noreferrer"><strong>Render · saip-sync</strong><p style="color:var(--muted);font-size:13px">Service, logs and environment ↗</p></a>
-          <a class="card" href="https://github.com/dexter187gold/sa-invoice-pro" target="_blank" rel="noopener noreferrer"><strong>GitHub · Application</strong><p style="color:var(--muted);font-size:13px">Source and production commits ↗</p></a>
-          <a class="card" href="https://github.com/dexter187gold/saip-sync" target="_blank" rel="noopener noreferrer"><strong>GitHub · Sync API</strong><p style="color:var(--muted);font-size:13px">Sync server source ↗</p></a>
-          <div class="card"><strong>Marketing Website</strong><p style="color:var(--muted);font-size:13px">Website URL needs confirmation before adding a live link.</p></div>
+          <a class="card" href="https://saip-license.onrender.com/login" target="_blank" rel="noopener noreferrer"><strong>Developer Licence Server</strong><p style="color:var(--muted);font-size:13px">Developer-only licence operations and API ↗</p></a>
+          <a class="card" href="https://saip-license.onrender.com/devices" target="_blank" rel="noopener noreferrer"><strong>Device Licence Management</strong><p style="color:var(--muted);font-size:13px">Status, activation, expiry and device controls · login required ↗</p></a>
+          <a class="card" href="https://saip-license.onrender.com/requests" target="_blank" rel="noopener noreferrer"><strong>Licence Requests</strong><p style="color:var(--muted);font-size:13px">Review pending requests and issue keys · login required ↗</p></a>
+          <a class="card" href="https://saip-license.onrender.com/keys" target="_blank" rel="noopener noreferrer"><strong>Licence Keys</strong><p style="color:var(--muted);font-size:13px">Issue and inspect customer-bound keys · login required ↗</p></a>
+          <a class="card" href="https://saip-license.onrender.com/plans" target="_blank" rel="noopener noreferrer"><strong>Licence Plans</strong><p style="color:var(--muted);font-size:13px">Server-side plan limits and billing periods · login required ↗</p></a>
+          <a class="card" href="https://saip-license.onrender.com/admin" target="_blank" rel="noopener noreferrer"><strong>Licence Payment Settings</strong><p style="color:var(--muted);font-size:13px">Developer-only provider configuration ↗</p></a>
+          <a class="card" href="https://saip-license.onrender.com/admin/billing" target="_blank" rel="noopener noreferrer"><strong>Billing & Activation Ledger</strong><p style="color:var(--muted);font-size:13px">Read-only payment history and CSV export ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/dev-portal" target="_blank" rel="noopener noreferrer"><strong>Developer Command Centre</strong><p style="color:var(--muted);font-size:13px">Releases, beta, broadcasts, operations and secrets ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/owner-console" target="_blank" rel="noopener noreferrer"><strong>Owner Command Centre</strong><p style="color:var(--muted);font-size:13px">Workspace overview and owner-only diagnostics ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/portal-admin" target="_blank" rel="noopener noreferrer"><strong>Client Portal Admin</strong><p style="color:var(--muted);font-size:13px">Manage client portal accounts and PIN recovery ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Standalone Client Portal</strong><p style="color:var(--muted);font-size:13px">Customer-facing portal service ↗</p></a>
+          <a class="card" href="https://sa-invoice-personal-vault.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Owner Personal Vault</strong><p style="color:var(--muted);font-size:13px">Private owner finance and ledger workspace · rotate vault secrets before use ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/owner-recovery" target="_blank" rel="noopener noreferrer"><strong>Owner Recovery</strong><p style="color:var(--muted);font-size:13px">Workspace owner recovery and reset protection ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev" target="_blank" rel="noopener noreferrer"><strong>Live Application</strong><p style="color:var(--muted);font-size:13px">Open current Cloudflare Pages production app ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/login" target="_blank" rel="noopener noreferrer"><strong>Application Sign In</strong><p style="color:var(--muted);font-size:13px">Open the main application login page ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/license" target="_blank" rel="noopener noreferrer"><strong>Customer Licence Plans</strong><p style="color:var(--muted);font-size:13px">Customer-facing licence and subscription page ↗</p></a>
+          <a class="card" href="https://sa-invoice-pro.pages.dev/portal" target="_blank" rel="noopener noreferrer"><strong>Customer Portal · Pages</strong><p style="color:var(--muted);font-size:13px">Main app customer portal entry; token required for account-specific pages ↗</p></a>
+          <a class="card" href="https://saip-licence-simulator.pages.dev" target="_blank" rel="noopener noreferrer"><strong>Licence Lab Simulator</strong><p style="color:var(--muted);font-size:13px">Isolated synthetic licence and payment testing ↗</p></a>
+          <a class="card" href="https://saip-sync.onrender.com/health" target="_blank" rel="noopener noreferrer"><strong>Sync API Health</strong><p style="color:var(--muted);font-size:13px">Service version, Git persistence and health ↗</p></a>
+          <a class="card" href="https://dashboard.render.com/web/srv-db5k07vlk1mc73a9dtb0" target="_blank" rel="noopener noreferrer"><strong>Render · saip-sync</strong><p style="color:var(--muted);font-size:13px">Owner/user-admin service, logs and environment ↗</p></a>
+          <a class="card" href="https://github.com/dexter187gold/sa-invoice-pro" target="_blank" rel="noopener noreferrer"><strong>GitHub · Application</strong><p style="color:var(--muted);font-size:13px">Source, issues, releases and workflows ↗</p></a>
+          <a class="card" href="https://github.com/dexter187gold/saip-sync" target="_blank" rel="noopener noreferrer"><strong>GitHub · Sync API</strong><p style="color:var(--muted);font-size:13px">Owner/user-admin backend source ↗</p></a>
+          <a class="card" href="https://sa-invoice.pages.dev" target="_blank" rel="noopener noreferrer"><strong>Marketing Website</strong><p style="color:var(--muted);font-size:13px">Public SA Invoice Pro website · Cloudflare Pages ↗</p></a>
         </div>
       </section>
       <section id="panel-users" class="panel hidden"></section>
