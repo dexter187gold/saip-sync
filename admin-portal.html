@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="robots" content="noindex,nofollow"/>
 <meta name="theme-color" content="#0b1220"/>
-<title>Admin · SA Invoice Pro Sync</title>
+<title>Owner &amp; User Admin · SA Invoice Pro</title>
 <style>
 :root, [data-theme="dark"] {
   --bg:#0b1220; --bg-elevated:#111827; --surface:#151c2c; --surface-2:#1a2336;
@@ -48,8 +48,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
 <body>
 <div id="login" class="login-shell">
   <div class="login-card">
-    <h1 style="margin:0 0 8px;font-size:1.35rem">Admin portal</h1>
-    <p style="color:var(--muted);margin:0 0 16px;font-size:14px">SA Invoice Pro Sync · multi-tenant</p>
+    <h1 style="margin:0 0 8px;font-size:1.35rem">Owner &amp; User Admin Console</h1>
+    <p style="color:var(--muted);margin:0 0 16px;font-size:14px">Owner access · account and workspace administration</p>
     <label style="display:block;font-size:13px;margin-bottom:4px">Owner email</label>
     <input id="email" class="input" type="email" autocomplete="username" value="sainvoicepro@gmail.com" readonly/>
     <label style="display:block;font-size:13px;margin:12px 0 4px">SA Owner token</label>
@@ -62,7 +62,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
 
 <div id="app" class="app">
   <header class="topbar">
-    <strong>SAIP Admin</strong>
+    <strong>SAIP Owner Admin</strong>
     <div style="display:flex;gap:8px;align-items:center">
       <span id="git-badge" style="font-size:12px;color:var(--muted)">—</span>
       <button type="button" class="btn btn-outline" id="btn-refresh">Refresh</button>
@@ -95,7 +95,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;borde
           <a class="card" href="https://sa-invoice-pro.pages.dev/owner-console" target="_blank" rel="noopener noreferrer"><strong>Owner Command Centre</strong><p style="color:var(--muted);font-size:13px">Workspace overview and owner-only diagnostics ↗</p></a>
           <a class="card" href="https://sa-invoice-pro.pages.dev/portal-admin" target="_blank" rel="noopener noreferrer"><strong>Client Portal Admin</strong><p style="color:var(--muted);font-size:13px">Manage client portal accounts and PIN recovery ↗</p></a>
           <a class="card" href="https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Standalone Client Portal</strong><p style="color:var(--muted);font-size:13px">Customer-facing portal service ↗</p></a>
-          <a class="card" href="https://sa-invoice-personal-vault.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Owner Personal Vault</strong><p style="color:var(--muted);font-size:13px">Private owner finance and ledger workspace ↗</p></a>
+          <a class="card" href="https://sa-invoice-personal-vault.pcrepairdex.workers.dev" target="_blank" rel="noopener noreferrer"><strong>Owner Personal Vault</strong><p style="color:var(--muted);font-size:13px">Private owner finance and ledger workspace · rotate vault secrets before use ↗</p></a>
           <a class="card" href="https://sa-invoice-pro.pages.dev/owner-recovery" target="_blank" rel="noopener noreferrer"><strong>Owner Recovery</strong><p style="color:var(--muted);font-size:13px">Workspace owner recovery and reset protection ↗</p></a>
           <a class="card" href="https://sa-invoice-pro.pages.dev" target="_blank" rel="noopener noreferrer"><strong>Live Application</strong><p style="color:var(--muted);font-size:13px">Open current Cloudflare Pages production app ↗</p></a>
           <a class="card" href="https://saip-licence-simulator.pages.dev" target="_blank" rel="noopener noreferrer"><strong>Licence Lab Simulator</strong><p style="color:var(--muted);font-size:13px">Isolated synthetic licence and payment testing ↗</p></a>
