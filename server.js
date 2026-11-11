@@ -1,5 +1,5 @@
 /**
- * SA Invoice Pro Sync v6.46.1 — portal · client login · git data · WA Cloud
+ * SA Invoice Pro Sync v6.46.2 — portal · client login · git data · WA Cloud
  */
 require('dotenv').config()
 const express = require('express')
@@ -35,7 +35,7 @@ const RESET_TOKEN_HOURS = 1
 const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '')
 const USING_DEFAULT_ADMIN_PASSWORD = !DEFAULT_ADMIN_PASSWORD
 const USING_DEFAULT_JWT = !JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET === 'dev-secret-change-me'
-const VERSION = '6.46.1'
+const VERSION = '6.46.2'
 
 const DATA_DIR = path.join(__dirname, 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -214,12 +214,24 @@ app.post('/api/auth/forgot-password', loginRateLimit, async (req, res) => {
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString()
   let delivered = false
   try { delivered = await deliverRecoveryCode(email, recovery_code) } catch (e) { console.warn('[auth] recovery email delivery failed', e.message) }
-  if (!delivered) return res.json(genericRecoveryResponse())
+  // Always persist the code so reset works even when email delivery is offline.
   const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex')
   passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code_hash: codeHash }
   passwordResets['code:' + email + ':' + codeHash] = { email, expires, used: false, created_at: now(), token, recovery_code_hash: codeHash }
   persistResets()
-  res.json({ ok: true, message: 'If the account exists, recovery instructions will be sent.', expires_in_hours: RESET_TOKEN_HOURS })
+  // When Resend is not configured (or send failed), return the code inline so the
+  // owner can complete recovery from the app UI. Email delivery still preferred.
+  if (!delivered) {
+    return res.json({
+      ok: true,
+      message: 'Email delivery is not configured. Use the recovery code shown in the app (expires in 1 hour).',
+      expires_in_hours: RESET_TOKEN_HOURS,
+      recovery_code,
+      code: recovery_code,
+      delivery: 'inline',
+    })
+  }
+  res.json({ ok: true, message: 'If the account exists, recovery instructions will be sent.', expires_in_hours: RESET_TOKEN_HOURS, delivery: 'email' })
 })
 
 app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
@@ -249,7 +261,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
 app.get('/api/workspace', auth, (req, res) => {
   const me = Object.values(users).find((u) => u.id === req.user.id)
   const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces })
-  const row = ownerId ? workspaces[ownerId] : null
+  const row = ownerId ? workspaces[ownerId] || null
   if (!row) return res.status(404).json({ error: 'No workspace' })
   const data = isTeamMember(me) ? filterTeamWorkspaceData(row.data, me.teamRole) : row.data
   res.json({ ok: true, version: row.version, updated_at: row.updated_at, data, ownerId })
@@ -307,7 +319,7 @@ app.get('/', (req, res) => {
   res.json({
     name: 'SA Invoice Pro Sync',
     version: VERSION,
-    codename: '6.46.1 · health · WA dual paths',
+    codename: '6.46.2 · recovery inline fallback',
     features: ['cloud_auth', 'workspace_sync', 'team_workspace', 'client_portal', 'payfast_itn', 'wa_cloud'],
     admin: PUBLIC_BASE + '/admin',
     health: PUBLIC_BASE + '/health',
