@@ -33,15 +33,23 @@ function isAllowedOrigin(origin) {
   const fixedOrigins = new Set([
     'https://sa-invoice-pro.pages.dev',
     'https://sa-invoice-pro-client-portal.pages.dev',
+    'https://sa-invoice-pro.pcrepairdex.workers.dev',
+    'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev',
     'https://saip-sync.onrender.com',
     'https://saip-license.onrender.com',
     'https://sa-invoice-license.onrender.com',
     'capacitor://localhost',
     'ionic://localhost',
     'http://localhost:3000',
+    'http://localhost:5173',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
   ]);
-  return fixedOrigins.has(String(origin));
+  const o = String(origin || '');
+  if (fixedOrigins.has(o)) return true;
+  // Allow Cloudflare Pages preview deploys for this product
+  if (/^https:\/\/[a-z0-9-]+\.sa-invoice-pro\.pages\.dev$/i.test(o)) return true;
+  return false;
 }
 
 function mountSecurity(app, opts = {}) {
