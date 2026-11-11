@@ -23,9 +23,6 @@ const {
 } = require('./security')
 
 const app = express()
-// Render terminates TLS and appends the client address to X-Forwarded-For.
-// Trust exactly that single proxy hop; rate limiting then uses Express req.ip,
-// never a caller-controlled header value.
 app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3847
 const JWT_SECRET = String(process.env.JWT_SECRET || '')
@@ -214,13 +211,10 @@ app.post('/api/auth/forgot-password', loginRateLimit, async (req, res) => {
   const expires = new Date(Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000).toISOString()
   let delivered = false
   try { delivered = await deliverRecoveryCode(email, recovery_code) } catch (e) { console.warn('[auth] recovery email delivery failed', e.message) }
-  // Always persist the code so reset works even when email delivery is offline.
   const codeHash = crypto.createHash('sha256').update(recovery_code).digest('hex')
   passwordResets[token] = { email, expires, used: false, created_at: now(), recovery_code_hash: codeHash }
   passwordResets['code:' + email + ':' + codeHash] = { email, expires, used: false, created_at: now(), token, recovery_code_hash: codeHash }
   persistResets()
-  // When Resend is not configured (or send failed), return the code inline so the
-  // owner can complete recovery from the app UI. Email delivery still preferred.
   if (!delivered) {
     return res.json({
       ok: true,
@@ -261,7 +255,7 @@ app.post('/api/auth/reset-password', loginRateLimit, (req, res) => {
 app.get('/api/workspace', auth, (req, res) => {
   const me = Object.values(users).find((u) => u.id === req.user.id)
   const ownerId = resolveWorkspaceKey({ user: me, tokenUser: req.user, workspaces })
-  const row = ownerId ? workspaces[ownerId] || null
+  const row = ownerId ? workspaces[ownerId] : null
   if (!row) return res.status(404).json({ error: 'No workspace' })
   const data = isTeamMember(me) ? filterTeamWorkspaceData(row.data, me.teamRole) : row.data
   res.json({ ok: true, version: row.version, updated_at: row.updated_at, data, ownerId })
