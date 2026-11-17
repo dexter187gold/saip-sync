@@ -98,7 +98,8 @@ function mountClientPortal(app, ctx) {
       const nestedClient = row.client && typeof row.client === 'object' ? row.client : {}
       const nestedCustomer = row.customer && typeof row.customer === 'object' ? row.customer : {}
       const rowClientId = row.clientId ?? row.client_id ?? row.customerId ?? row.customer_id ?? nestedClient.id ?? nestedCustomer.id
-      if (clientId != null && rowClientId != null && String(rowClientId) === String(clientId)) return true
+      const clientIds = Array.isArray(clientId) ? clientId : [clientId]
+      if (rowClientId != null && clientIds.some((id) => id != null && String(rowClientId) === String(id))) return true
       const rowEmail = String(row.clientEmail || row.client_email || row.customerEmail || row.customer_email || row.email || nestedClient.email || nestedCustomer.email || '').toLowerCase().trim()
       return !!(em && rowEmail && rowEmail === em)
     })
@@ -286,14 +287,14 @@ function mountClientPortal(app, ctx) {
       if (acc.workspaceOwnerId !== ownerId) continue
       const workspaceClient = findWorkspaceClient(d, acc.clientId, acc.email)
       const clientId = workspaceClient?.id ?? acc.clientId
-      const invoices = filterByClient(d.invoices, clientId, acc.email)
+      const invoices = filterByClient(d.invoices, [clientId, acc.clientId], acc.email)
       acc.clientId = String(clientId)
       acc.snapshot = {
         company: companyFromWorkspace(d, acc.snapshot?.company || {}),
         client: workspaceClient || acc.snapshot?.client,
-        invoices, quotes: filterByClient(d.quotes, clientId, acc.email),
-        tickets: filterByClient(d.tickets, clientId, acc.email),
-        payments: filterPaymentsByClient(d.payments, clientId, acc.email, invoices),
+        invoices, quotes: filterByClient(d.quotes, [clientId, acc.clientId], acc.email),
+        tickets: filterByClient(d.tickets, [clientId, acc.clientId], acc.email),
+        payments: filterPaymentsByClient(d.payments, [clientId, acc.clientId], acc.email, invoices),
         updatedAt: now(),
       }
       acc.updatedAt = now()
@@ -373,9 +374,9 @@ function mountClientPortal(app, ctx) {
       const d = ws.data
       const workspaceClient = findWorkspaceClient(d, clientId, email)
       if (workspaceClient?.id != null) clientId = String(workspaceClient.id)
-      snapshot.invoices = filterByClient(d.invoices, clientId, email)
-      snapshot.quotes = filterByClient(d.quotes, clientId, email)
-      snapshot.tickets = filterByClient(d.tickets, clientId, email)
+      snapshot.invoices = filterByClient(d.invoices, [clientId, acc.clientId], email)
+      snapshot.quotes = filterByClient(d.quotes, [clientId, acc.clientId], email)
+      snapshot.tickets = filterByClient(d.tickets, [clientId, acc.clientId], email)
       snapshot.payments = filterPaymentsByClient(d.payments, clientId, email, snapshot.invoices)
       if (Array.isArray(d.clients)) {
         const found = d.clients.find((c) => c.id === clientId || safeEmail(c.email) === email)
@@ -438,7 +439,7 @@ function mountClientPortal(app, ctx) {
         invoices,
         quotes: filterByClient(d.quotes, clientId, email),
         tickets: filterByClient(d.tickets, clientId, email),
-        payments: filterPaymentsByClient(d.payments, clientId, email, invoices),
+        payments: filterPaymentsByClient(d.payments, [clientId, acc.clientId], email, invoices),
         updatedAt: now(),
       }
     }
