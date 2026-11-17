@@ -176,11 +176,11 @@ test('client dashboard returns a detailed statement and includes payments linked
   h.workspaces['owner-1'] = { data: {
     clients: [{ id: 1, name: 'Client One', email: 'client@example.com' }],
     invoices: [
-      { id: 'inv-1', number: 'INV-001', clientId: 1, total: 100, amountPaid: 20, amountDue: 80, status: 'partial', date: '2026-10-01' },
-      { id: 'private-inv', clientId: 2, total: 999, status: 'unpaid' },
+      { id: 'inv-1', number: 'INV-001', clientId: 'client-1', total: 100, amountPaid: 20, amountDue: 80, status: 'partial', date: '2026-10-01' },
+      { id: 'private-inv', clientId: 'client-2', total: 999, status: 'unpaid' },
     ],
-    quotes: [{ id: 'q-1', clientId: 1, total: 50, status: 'accepted', createdAt: '2026-10-02T10:00:00.000Z' }],
-    tickets: [{ id: 'job-1', clientId: 1, status: 'completed', createdAt: '2026-10-03T10:00:00.000Z' }],
+    quotes: [{ id: 'q-1', clientId: 'client-1', total: 50, status: 'accepted', createdAt: '2026-10-02T10:00:00.000Z' }],
+    tickets: [{ id: 'job-1', clientId: 'client-1', status: 'completed', createdAt: '2026-10-03T10:00:00.000Z' }],
     payments: [
       { id: 'pay-1', invoiceId: 'inv-1', amount: 20, method: 'EFT', reference: 'REF-1', createdAt: '2026-10-04T11:30:00.000Z' },
       { id: 'private-pay', invoiceId: 'private-inv', amount: 999 },
