@@ -8,6 +8,7 @@ const path = require('path')
 const crypto = require('crypto')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
+const { buildSignature } = require('./payfastSign')
 
 function mountClientPortal(app, ctx) {
   const {
@@ -18,6 +19,7 @@ function mountClientPortal(app, ctx) {
     auth,
     now,
     JWT_SECRET,
+    PUBLIC_BASE,
     loginRateLimit,
     safeEmail,
     git,
@@ -78,11 +80,101 @@ function mountClientPortal(app, ctx) {
     const em = String(email || '').toLowerCase().trim()
     return arr.filter((row) => {
       if (!row) return false
-      if (clientId && (row.clientId === clientId || row.client_id === clientId)) return true
-      const rowEmail = String(row.clientEmail || row.email || '').toLowerCase().trim()
-      if (em && rowEmail && rowEmail === em) return true
-      return false
+      const rowClientId = row.clientId ?? row.client_id ?? row.customerId
+      if (clientId != null && rowClientId != null && String(rowClientId) === String(clientId)) return true
+      const rowEmail = String(row.clientEmail || row.customerEmail || row.email || '').toLowerCase().trim()
+      return !!(em && rowEmail && rowEmail === em)
     })
+  }
+
+  // Payment records are frequently linked through invoiceId rather than a
+  // clientId/email. Include only payments linked to this client's invoices.
+  function filterPaymentsByClient(list, clientId, email, invoices = []) {
+    const direct = filterByClient(list, clientId, email)
+    const invoiceKeys = new Set()
+    for (const invoice of invoices || []) {
+      if (invoice?.id != null) invoiceKeys.add(String(invoice.id))
+      if (invoice?.number != null) invoiceKeys.add(String(invoice.number))
+    }
+    const seen = new Set(direct.map((p) => String(p.id || p.reference || JSON.stringify(p))))
+    const linked = (Array.isArray(list) ? list : []).filter((payment) => {
+      if (!payment) return false
+      const invoiceKey = payment.invoiceId ?? payment.invoice_id ?? payment.invoiceNumber ?? payment.invoice_number
+      if (invoiceKey == null || !invoiceKeys.has(String(invoiceKey))) return false
+      const key = String(payment.id || payment.reference || JSON.stringify(payment))
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    return [...direct, ...linked]
+  }
+
+  function paymentTotalsByInvoice(payments = []) {
+    const totals = new Map()
+    for (const payment of payments || []) {
+      const id = payment?.invoiceId ?? payment?.invoice_id ?? payment?.invoiceNumber ?? payment?.invoice_number
+      if (id == null) continue
+      totals.set(String(id), (totals.get(String(id)) || 0) + (Number(payment.amount) || 0))
+    }
+    return totals
+  }
+
+  function makeAccountStatement(invoices = [], payments = [], timestamp = new Date().toISOString()) {
+    const paymentTotals = paymentTotalsByInvoice(payments)
+    const invoiceRows = (invoices || []).map((invoice) => {
+      const id = String(invoice.id ?? invoice.number ?? '')
+      const recordedPaid = Math.max(Number(invoice.amountPaid) || 0, paymentTotals.get(id) || paymentTotals.get(String(invoice.number || '')) || 0)
+      const total = Math.max(0, Number(invoice.total ?? invoice.amount) || 0)
+      const status = String(invoice.status || '').toLowerCase()
+      const dueFromRecord = invoice.amountDue == null ? null : Math.max(0, Number(invoice.amountDue) || 0)
+      const calculatedDue = Math.max(0, total - recordedPaid)
+      const due = ['paid', 'settled', 'closed'].includes(status) ? 0 : (dueFromRecord == null ? calculatedDue : Math.min(dueFromRecord, calculatedDue))
+      return { invoice, id, total, paid: Math.max(0, total - due), due }
+    })
+    const totalInvoiced = invoiceRows.reduce((sum, row) => sum + row.total, 0)
+    const openBalance = invoiceRows.reduce((sum, row) => sum + row.due, 0)
+    const totalPaid = invoiceRows.reduce((sum, row) => sum + row.paid, 0)
+    const entries = []
+    for (const row of invoiceRows) {
+      const inv = row.invoice
+      entries.push({
+        id: 'invoice:' + row.id, type: 'invoice', date: inv.createdAt || inv.issuedAt || inv.date || inv.updatedAt || timestamp,
+        reference: inv.number || inv.id, description: 'Invoice issued', debit: row.total, credit: 0,
+        status: inv.status || 'issued', invoiceId: inv.id,
+      })
+    }
+    const paymentSums = paymentTotalsByInvoice(payments)
+    for (const payment of payments || []) {
+      const amount = Math.max(0, Number(payment.amount) || 0)
+      if (!amount) continue
+      entries.push({
+        id: 'payment:' + String(payment.id || payment.reference || entries.length),
+        type: 'payment', date: payment.createdAt || payment.paidAt || payment.date || timestamp,
+        reference: payment.reference || payment.transactionId || payment.id || '',
+        description: payment.method || payment.channel || 'Payment received',
+        debit: 0, credit: amount, status: payment.status || 'received',
+        invoiceId: payment.invoiceId || payment.invoice_id || null,
+      })
+    }
+    // Legacy invoices may contain amountPaid without a corresponding payment row.
+    for (const row of invoiceRows) {
+      const inv = row.invoice
+      const recorded = paymentTotals.get(row.id) || paymentTotals.get(String(inv.number || '')) || 0
+      const legacy = Math.max(0, (Number(inv.amountPaid) || 0) - recorded)
+      if (legacy > 0.009) entries.push({
+        id: 'legacy-payment:' + row.id, type: 'payment',
+        date: inv.paidAt || inv.updatedAt || inv.date || timestamp,
+        reference: inv.number || inv.id, description: 'Previously recorded payment',
+        debit: 0, credit: legacy, status: 'recorded', invoiceId: inv.id,
+      })
+    }
+    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    let balance = 0
+    for (const entry of entries) {
+      balance = Math.round((balance + entry.debit - entry.credit + Number.EPSILON) * 100) / 100
+      entry.balance = balance
+    }
+    return { generatedAt: timestamp, currency: 'ZAR', totalInvoiced, totalPaid, openBalance, entries }
   }
 
   function auditPortal(ownerId, action, email, details = {}) {
@@ -200,7 +292,7 @@ function mountClientPortal(app, ctx) {
       snapshot.invoices = filterByClient(d.invoices, clientId, email)
       snapshot.quotes = filterByClient(d.quotes, clientId, email)
       snapshot.tickets = filterByClient(d.tickets, clientId, email)
-      snapshot.payments = filterByClient(d.payments, clientId, email)
+      snapshot.payments = filterPaymentsByClient(d.payments, clientId, email, snapshot.invoices)
       if (Array.isArray(d.clients)) {
         const found = d.clients.find((c) => c.id === clientId || safeEmail(c.email) === email)
         if (found) snapshot.client = found
@@ -224,7 +316,7 @@ function mountClientPortal(app, ctx) {
 
     const portalBase =
       process.env.CLIENT_PORTAL_URL ||
-      'https://sa-invoice-pro-client-portal.pages.dev'
+      'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev'
 
     res.json({
       ok: true,
@@ -258,7 +350,7 @@ function mountClientPortal(app, ctx) {
         invoices: filterByClient(d.invoices, clientId, email),
         quotes: filterByClient(d.quotes, clientId, email),
         tickets: filterByClient(d.tickets, clientId, email),
-        payments: filterByClient(d.payments, clientId, email),
+        payments: filterPaymentsByClient(d.payments, clientId, email, filterByClient(d.invoices, clientId, email)),
         updatedAt: now(),
       }
     }
@@ -358,26 +450,102 @@ function mountClientPortal(app, ctx) {
     }
 
     const invoices = snap.invoices || []
-    const openBal = invoices
-      .filter((i) => ['unpaid', 'partial', 'overdue'].includes(String(i.status || '').toLowerCase()))
-      .reduce((s, i) => s + (Number(i.amountDue ?? i.total) || 0), 0)
-
+    const quotes = snap.quotes || []
+    const tickets = snap.tickets || []
+    const payments = snap.payments || []
+    const statement = makeAccountStatement(invoices, payments, now())
     res.json({
       ok: true,
       company: snap.company || {},
       client: snap.client || { name: acc.name, email: acc.email },
       summary: {
         invoices: invoices.length,
-        quotes: (snap.quotes || []).length,
-        tickets: (snap.tickets || []).length,
-        payments: (snap.payments || []).length,
-        openBalance: openBal,
+        paidInvoices: invoices.filter((i) => ['paid', 'settled', 'closed'].includes(String(i.status || '').toLowerCase())).length,
+        quotes: quotes.length,
+        tickets: tickets.length,
+        payments: payments.length,
+        totalInvoiced: statement.totalInvoiced,
+        totalPaid: statement.totalPaid,
+        openBalance: statement.openBalance,
       },
       invoices,
-      quotes: snap.quotes || [],
-      tickets: snap.tickets || [],
-      payments: snap.payments || [],
+      quotes,
+      tickets,
+      payments,
+      accountStatement: statement,
       updatedAt: snap.updatedAt,
+    })
+  })
+
+  /** Secure PayFast checkout for the authenticated customer's own invoice. */
+  app.post('/api/client-portal/pay/:invoiceId', clientAuth, (req, res) => {
+    const accounts = loadAccounts()
+    const key = accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)
+    const acc = accounts[key]
+    if (!acc || acc.active === false) return res.status(404).json({ error: 'Client portal account not found' })
+    const ws = workspaces[acc.workspaceOwnerId]
+    const data = ws?.data || {}
+    const snap = acc.snapshot || {}
+    const invoices = Array.isArray(data.invoices) ? data.invoices : (snap.invoices || [])
+    const payments = filterPaymentsByClient(
+      Array.isArray(data.payments) ? data.payments : (snap.payments || []),
+      acc.clientId, acc.email,
+      invoices.filter((i) => String(i.clientId ?? i.client_id ?? '') === String(acc.clientId)),
+    )
+    const invoice = invoices.find((i) =>
+      (String(i.id) === String(req.params.invoiceId) || String(i.number) === String(req.params.invoiceId)) &&
+      String(i.clientId ?? i.client_id ?? '') === String(acc.clientId)
+    )
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found for this client' })
+    const total = Math.max(0, Number(invoice.total ?? invoice.amount) || 0)
+    const paidByPayments = payments
+      .filter((p) => String(p.invoiceId ?? p.invoice_id ?? p.invoiceNumber ?? p.invoice_number ?? '') === String(invoice.id) ||
+        String(p.invoiceId ?? p.invoice_id ?? p.invoiceNumber ?? p.invoice_number ?? '') === String(invoice.number))
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    const paid = Math.max(Number(invoice.amountPaid) || 0, paidByPayments)
+    const calculatedDue = Math.max(0, total - paid)
+    const due = invoice.amountDue == null ? calculatedDue : Math.min(calculatedDue, Math.max(0, Number(invoice.amountDue) || 0))
+    if (due <= 0.009) return res.status(409).json({ error: 'This invoice has no outstanding balance' })
+
+    const settings = data.settings || {}
+    const company = data.company && !Array.isArray(data.company) ? data.company : (data.company && data.company[0]) || snap.company || {}
+    const merchantId = process.env.PAYFAST_MERCHANT_ID || settings.payfastMerchantId || ''
+    const merchantKey = process.env.PAYFAST_MERCHANT_KEY || settings.payfastMerchantKey || ''
+    const passphrase = process.env.PAYFAST_PASSPHRASE || settings.payfastPassphrase || ''
+    const portalBase = String(process.env.CLIENT_PORTAL_URL || 'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev').replace(/\/$/, '')
+    if (!merchantId || !merchantKey) {
+      return res.status(200).json({
+        ok: true, configured: false, amountDue: due,
+        message: 'Online card payments are not configured yet. Please use the workshop EFT details or contact the workshop.',
+        company: { name: company.name, email: company.email, phone: company.phone },
+        bankDetails: {
+          bankName: settings.bankName || company.bankName || '',
+          accountName: settings.bankAccountName || company.bankAccountName || '',
+          accountNumber: settings.bankAccountNumber || company.bankAccountNumber || '',
+          branchCode: settings.bankBranchCode || company.bankBranchCode || '',
+          reference: invoice.number || invoice.id,
+        },
+      })
+    }
+    const sandbox = String(process.env.PAYFAST_SANDBOX || settings.payfastSandbox || 'true').toLowerCase() !== 'false'
+    const fields = {
+      merchant_id: String(merchantId),
+      merchant_key: String(merchantKey),
+      return_url: portalBase + '/?payment=processing',
+      cancel_url: portalBase + '/?payment=cancelled',
+      notify_url: String(PUBLIC_BASE || 'https://saip-sync.onrender.com').replace(/\/$/, '') + '/api/payfast/itn',
+      amount: due.toFixed(2),
+      item_name: String(invoice.number || invoice.id).slice(0, 100),
+      item_description: ('Invoice payment ' + String(invoice.number || invoice.id)).slice(0, 255),
+      custom_str1: String(invoice.id),
+      custom_str2: String(acc.clientId),
+      email_address: String(acc.email),
+    }
+    fields.signature = buildSignature(fields, passphrase)
+    res.json({
+      ok: true, configured: true, sandbox,
+      processUrl: sandbox ? 'https://sandbox.payfast.co.za/eng/process' : 'https://www.payfast.co.za/eng/process',
+      amount: due, invoiceId: invoice.id, invoiceNumber: invoice.number || invoice.id, fields,
     })
   })
 
@@ -432,7 +600,7 @@ function mountClientPortal(app, ctx) {
     res.json({
       ok: true,
       feature: 'client_portal_login',
-      portalUrl: process.env.CLIENT_PORTAL_URL || 'https://sa-invoice-pro-client-portal.pages.dev',
+      portalUrl: process.env.CLIENT_PORTAL_URL || 'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev',
     })
   })
 

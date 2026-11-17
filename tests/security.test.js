@@ -2,9 +2,9 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { mountSecurity, isSessionVersionValid, isSessionIdentityValid, clientIp } = require('../security')
 
-function runCors(origin, method = 'GET') {
+function runCors(origin, method = 'GET', options = {}) {
   const middleware = []
-  mountSecurity({ use: (fn) => middleware.push(fn) })
+  mountSecurity({ use: (fn) => middleware.push(fn) }, options)
   const headers = {}
   let statusCode = 200
   let ended = false
@@ -117,4 +117,18 @@ test('session identity validation rejects mismatched account email and user ID',
   assert.equal(isSessionIdentityValid({ id: 'account-a', email: 'b@example.com', sv: 3 }, user), false)
   assert.equal(isSessionIdentityValid({ id: 'account-b', email: 'a@example.com', sv: 3 }, user), false)
   assert.equal(isSessionIdentityValid({ id: 'account-a', email: 'a@example.com', sv: 2 }, user), false)
+})
+
+
+test('configured CORS origins extend rather than replace the production portal allowlist', () => {
+  const result = runCors('https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev', 'POST', {
+    allowedOrigins: 'https://sa-invoice-pro.pages.dev',
+  })
+  assert.equal(result.headers['access-control-allow-origin'], 'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev')
+  assert.equal(result.nextCalled, true)
+})
+
+test('configured custom CORS origins remain supported', () => {
+  const result = runCors('https://custom.example', 'POST', { allowedOrigins: 'https://custom.example' })
+  assert.equal(result.headers['access-control-allow-origin'], 'https://custom.example')
 })

@@ -53,7 +53,9 @@ function isAllowedOrigin(origin) {
 }
 
 function mountSecurity(app, opts = {}) {
-  const allowedOrigins = String(opts.allowedOrigins || process.env.CORS_ORIGINS || '')
+  // Explicit CORS_ORIGINS entries extend the built-in product allowlist; they
+  // must never accidentally disable the client portal's production origins.
+  const configuredOrigins = String(opts.allowedOrigins || process.env.CORS_ORIGINS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
@@ -70,13 +72,7 @@ function mountSecurity(app, opts = {}) {
 
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (allowedOrigins.length) {
-      if (origin && allowedOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-      }
-    } else if (origin && isAllowedOrigin(origin)) {
+    if (origin && (configuredOrigins.includes(origin) || isAllowedOrigin(origin))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
