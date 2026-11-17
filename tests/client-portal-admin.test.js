@@ -413,3 +413,18 @@ test('client dashboard includes invoice-number and nested invoice payment histor
   assert.equal(r.payload.summary.totalPaid, 50)
   assert.equal(r.payload.summary.openBalance, 150)
 })
+
+
+test('client and business presence reports online status without exposing account secrets', async (t) => {
+  const h = harness(t)
+  const clientUser = { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-1' }
+  await h.call('GET', '/api/client-portal/accounts', { actorId: 'owner-1' })
+  const heartbeat = await h.call('POST', '/api/client-portal/presence', { clientUser })
+  assert.equal(heartbeat.statusCode, 200)
+  assert.equal(heartbeat.payload.clientOnline, true)
+  assert.equal(heartbeat.payload.businessOnline, true)
+  const list = await h.call('GET', '/api/client-portal/accounts', { actorId: 'owner-1' })
+  assert.equal(list.payload.accounts[0].clientOnline, true)
+  assert.equal(list.payload.accounts[0].businessOnline, true)
+  assert.equal('pin_hash' in list.payload.accounts[0], false)
+})
