@@ -321,11 +321,12 @@ function mountClientPortal(app, ctx) {
     res.json({
       ok: true,
       email,
+      username: email,
       pin,
       clientId,
       portalUrl: portalBase,
-      loginHint: `Sign in at ${portalBase} with ${email} and PIN ${pin}`,
-      message: 'Share email + PIN with the customer. PIN shown once — store it securely.',
+      loginHint: `Sign in at ${portalBase} with username ${email} and PIN ${pin}`,
+      message: 'Share the portal URL, username and PIN with the customer. PIN shown once — store it securely.',
     })
   })
 

@@ -303,3 +303,22 @@ test('client invoice checkout provides the saved company EFT details when PayFas
     }
   }
 })
+
+
+test('issuing a client portal login returns a clearly labelled username and production portal URL', async (t) => {
+  const h = harness(t)
+  const r = await h.call('POST', '/api/client-portal/issue', {
+    body: {
+      clientId: 'client-1',
+      email: 'client@example.com',
+      name: 'Client One',
+      client: { id: 'client-1', email: 'client@example.com', name: 'Client One' },
+      company: { name: 'Workshop' },
+    },
+  })
+  assert.equal(r.statusCode, 200)
+  assert.equal(r.payload.username, 'client@example.com')
+  assert.match(r.payload.pin, /^\d{6}$/)
+  assert.equal(r.payload.portalUrl, 'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev')
+  assert.match(r.payload.loginHint, /username client@example\.com/)
+})
