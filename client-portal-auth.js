@@ -174,7 +174,8 @@ function mountClientPortal(app, ctx) {
     const paymentTotals = paymentTotalsByInvoice(payments)
     const invoiceRows = (invoices || []).map((invoice) => {
       const id = String(invoice.id ?? invoice.number ?? '')
-      const recordedPaid = Math.max(Number(invoice.amountPaid) || 0, paymentTotals.get(id) || paymentTotals.get(String(invoice.number || '')) || 0)
+      const linkedPaid = (paymentTotals.get(id) || 0) + (paymentTotals.get(String(invoice.number || '')) || 0)
+      const recordedPaid = Math.max(Number(invoice.amountPaid) || 0, linkedPaid)
       const total = Math.max(0, Number(invoice.total ?? invoice.amount) || 0)
       const status = String(invoice.status || '').toLowerCase()
       const dueFromRecord = invoice.amountDue == null ? null : Math.max(0, Number(invoice.amountDue) || 0)
