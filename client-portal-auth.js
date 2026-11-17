@@ -200,15 +200,17 @@ function mountClientPortal(app, ctx) {
     }
     const paymentSums = paymentTotalsByInvoice(payments)
     for (const payment of payments || []) {
-      const amount = Math.max(0, Number(payment.amount) || 0)
+      const amount = Math.max(0, Number(payment.amount ?? payment.paidAmount ?? payment.value) || 0)
       if (!amount) continue
+      const status = String(payment.status || 'received').toLowerCase()
+      const confirmed = !['failed', 'declined', 'cancelled', 'canceled', 'void', 'voided', 'reversed', 'refunded'].includes(status)
       entries.push({
         id: 'payment:' + String(payment.id || payment.reference || entries.length),
         type: 'payment', date: payment.createdAt || payment.paidAt || payment.date || timestamp,
         reference: payment.reference || payment.transactionId || payment.id || '',
         description: payment.method || payment.channel || 'Payment received',
-        debit: 0, credit: amount, status: payment.status || 'received',
-        invoiceId: payment.invoiceId || payment.invoice_id || null,
+        debit: 0, credit: confirmed ? amount : 0, status: payment.status || 'received',
+        invoiceId: payment.invoiceId || payment.invoice_id || payment.invoiceNumber || payment.invoice_number || null,
       })
     }
     // Legacy invoices may contain amountPaid without a corresponding payment row.
