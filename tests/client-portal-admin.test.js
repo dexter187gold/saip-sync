@@ -47,14 +47,14 @@ function harness(t) {
     },
     git: null,
   })
-  async function call(method, route, { actorId = 'owner-1', clientUser = null, params = {}, body = {} } = {}) {
+  async function call(method, route, { actorId = 'owner-1', clientUser = null, params = {}, query = {}, body = {} } = {}) {
     const handlers = routes.get(method + ' ' + route)
     assert.ok(handlers, 'registered route ' + method + ' ' + route)
     const handler = handlers[handlers.length - 1]
     let statusCode = 200
     let payload
     const res = { status(code) { statusCode = code; return this }, json(value) { payload = value; return this } }
-    await handler({ user: { id: actorId }, clientUser, params, body }, res)
+    await handler({ user: { id: actorId }, clientUser, params, query, body }, res)
     return { statusCode, payload }
   }
   async function authenticateClient(token) {
@@ -321,4 +321,52 @@ test('issuing a client portal login returns a clearly labelled username and prod
   assert.match(r.payload.pin, /^\d{6}$/)
   assert.equal(r.payload.portalUrl, 'https://sa-invoice-pro-client-portal.pcrepairdex.workers.dev')
   assert.match(r.payload.loginHint, /username client@example\.com/)
+})
+
+
+test('client portal messaging is persistent and isolated to the signed-in client', async (t) => {
+  const h = harness(t)
+  const clientUser = { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-1' }
+  const sent = await h.call('POST', '/api/client-portal/messages', {
+    clientUser, body: { message: 'Can you confirm when my repair will be ready?', relatedType: 'job', relatedId: 'job-1' },
+  })
+  assert.equal(sent.statusCode, 201)
+  assert.equal(sent.payload.message.sender, 'client')
+  const thread = await h.call('GET', '/api/client-portal/messages', { clientUser })
+  assert.equal(thread.statusCode, 200)
+  assert.equal(thread.payload.messages.length, 1)
+  assert.equal(thread.payload.messages[0].message, 'Can you confirm when my repair will be ready?')
+  const otherClient = await h.call('GET', '/api/client-portal/messages', {
+    clientUser: { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-2' },
+  })
+  assert.equal(otherClient.payload.messages.length, 0)
+})
+
+test('business can reply only to a portal account in its own workspace', async (t) => {
+  const h = harness(t)
+  const clientUser = { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-1' }
+  await h.call('POST', '/api/client-portal/messages', { clientUser, body: { message: 'Please update me.' } })
+  const reply = await h.call('POST', '/api/client-portal/messages/business/reply', {
+    actorId: 'owner-1', body: { email: 'client@example.com', message: 'Your repair is being tested now.' },
+  })
+  assert.equal(reply.statusCode, 201)
+  assert.equal(reply.payload.message.sender, 'business')
+  const thread = await h.call('GET', '/api/client-portal/messages/business', {
+    actorId: 'owner-1', query: { email: 'client@example.com' },
+  })
+  assert.equal(thread.statusCode, 200)
+  assert.equal(thread.payload.messages.length, 2)
+  const denied = await h.call('POST', '/api/client-portal/messages/business/reply', {
+    actorId: 'owner-2', body: { email: 'client@example.com', message: 'Should not be sent.' },
+  })
+  assert.equal(denied.statusCode, 404)
+})
+
+test('portal messaging rejects empty and oversized messages', async (t) => {
+  const h = harness(t)
+  const clientUser = { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-1' }
+  const empty = await h.call('POST', '/api/client-portal/messages', { clientUser, body: { message: '   ' } })
+  assert.equal(empty.statusCode, 400)
+  const long = await h.call('POST', '/api/client-portal/messages', { clientUser, body: { message: 'x'.repeat(4001) } })
+  assert.equal(long.statusCode, 400)
 })
