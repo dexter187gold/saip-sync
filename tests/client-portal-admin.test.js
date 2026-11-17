@@ -245,3 +245,15 @@ test('client portal PayFast checkout is limited to the signed-in client and retu
     }
   }
 })
+
+
+test('client portal login accepts the issued username alias as well as email', async (t) => {
+  const h = harness(t)
+  const r = await h.call('POST', '/api/client-portal/login', {
+    body: { username: 'client@example.com', pin: '123456' },
+  })
+  assert.equal(r.statusCode, 200)
+  assert.equal(r.payload.ok, true)
+  assert.ok(r.payload.token)
+  assert.equal(r.payload.user.email, 'client@example.com')
+})

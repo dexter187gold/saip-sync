@@ -497,6 +497,9 @@ function mountClientPortal(app, ctx) {
       String(i.clientId ?? i.client_id ?? '') === String(acc.clientId)
     )
     if (!invoice) return res.status(404).json({ error: 'Invoice not found for this client' })
+    if (['cancelled', 'canceled', 'void', 'voided'].includes(String(invoice.status || '').toLowerCase())) {
+      return res.status(409).json({ error: 'This invoice is cancelled or void and cannot be paid' })
+    }
     const total = Math.max(0, Number(invoice.total ?? invoice.amount) || 0)
     const paidByPayments = payments
       .filter((p) => String(p.invoiceId ?? p.invoice_id ?? p.invoiceNumber ?? p.invoice_number ?? '') === String(invoice.id) ||
