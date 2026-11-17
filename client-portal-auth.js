@@ -75,14 +75,24 @@ function mountClientPortal(app, ctx) {
     }
   }
 
+  function companyFromWorkspace(data, fallback = {}) {
+    const raw = data?.company
+    const selected = Array.isArray(raw) ? raw[0] : raw
+    if (selected && typeof selected === 'object') return selected
+    const settingsCompany = data?.settings?.company
+    return settingsCompany && typeof settingsCompany === 'object' ? settingsCompany : (fallback || {})
+  }
+
   function filterByClient(list, clientId, email) {
     const arr = Array.isArray(list) ? list : []
     const em = String(email || '').toLowerCase().trim()
     return arr.filter((row) => {
       if (!row) return false
-      const rowClientId = row.clientId ?? row.client_id ?? row.customerId
+      const nestedClient = row.client && typeof row.client === 'object' ? row.client : {}
+      const nestedCustomer = row.customer && typeof row.customer === 'object' ? row.customer : {}
+      const rowClientId = row.clientId ?? row.client_id ?? row.customerId ?? row.customer_id ?? nestedClient.id ?? nestedCustomer.id
       if (clientId != null && rowClientId != null && String(rowClientId) === String(clientId)) return true
-      const rowEmail = String(row.clientEmail || row.customerEmail || row.email || '').toLowerCase().trim()
+      const rowEmail = String(row.clientEmail || row.client_email || row.customerEmail || row.customer_email || row.email || nestedClient.email || nestedCustomer.email || '').toLowerCase().trim()
       return !!(em && rowEmail && rowEmail === em)
     })
   }
@@ -269,7 +279,7 @@ function mountClientPortal(app, ctx) {
       if (acc.workspaceOwnerId !== ownerId) continue
       const invoices = filterByClient(d.invoices, acc.clientId, acc.email)
       acc.snapshot = {
-        company: (Array.isArray(d.company) ? d.company[0] : d.company) || d.settings?.company || acc.snapshot?.company || {},
+        company: companyFromWorkspace(d, acc.snapshot?.company || {}),
         client: (d.clients || []).find((c) => String(c.id) === String(acc.clientId) || safeEmail(c.email) === acc.email) || acc.snapshot?.client,
         invoices, quotes: filterByClient(d.quotes, acc.clientId, acc.email),
         tickets: filterByClient(d.tickets, acc.clientId, acc.email),
@@ -359,7 +369,7 @@ function mountClientPortal(app, ctx) {
         const found = d.clients.find((c) => c.id === clientId || safeEmail(c.email) === email)
         if (found) snapshot.client = found
       }
-      if (d.settings || d.company) snapshot.company = d.company || d.settings?.company || snapshot.company
+      if (d.settings || d.company) snapshot.company = companyFromWorkspace(d, snapshot.company)
     }
 
     accounts[key] = {
@@ -408,7 +418,7 @@ function mountClientPortal(app, ctx) {
     if (ws && ws.data) {
       const d = ws.data
       acc.snapshot = {
-        company: d.company || d.settings?.company || acc.snapshot?.company || {},
+        company: companyFromWorkspace(d, acc.snapshot?.company || {}),
         client: (d.clients || []).find((c) => c.id === clientId) || acc.snapshot?.client,
         invoices: filterByClient(d.invoices, clientId, email),
         quotes: filterByClient(d.quotes, clientId, email),
@@ -502,7 +512,7 @@ function mountClientPortal(app, ctx) {
       const clientId = acc.clientId
       const email = acc.email
       snap = {
-        company: d.company || d.settings?.company || snap.company || {},
+        company: companyFromWorkspace(d, snap.company || {}),
         client: (d.clients || []).find((c) => String(c.id) === String(clientId) || safeEmail(c.email) === email) || snap.client,
         invoices: filterByClient(d.invoices, clientId, email),
         quotes: filterByClient(d.quotes, clientId, email),
@@ -573,7 +583,7 @@ function mountClientPortal(app, ctx) {
     if (due <= 0.009) return res.status(409).json({ error: 'This invoice has no outstanding balance' })
 
     const settings = data.settings || {}
-    const company = data.company && !Array.isArray(data.company) ? data.company : (data.company && data.company[0]) || snap.company || {}
+    const company = companyFromWorkspace(data, snap.company || {})
     const merchantId = process.env.PAYFAST_MERCHANT_ID || settings.payfastMerchantId || ''
     const merchantKey = process.env.PAYFAST_MERCHANT_KEY || settings.payfastMerchantKey || ''
     const passphrase = process.env.PAYFAST_PASSPHRASE || settings.payfastPassphrase || ''
