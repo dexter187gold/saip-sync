@@ -257,3 +257,43 @@ test('client portal login accepts the issued username alias as well as email', a
   assert.ok(r.payload.token)
   assert.equal(r.payload.user.email, 'client@example.com')
 })
+
+
+test('client invoice checkout provides the saved company EFT details when PayFast is not configured', async (t) => {
+  const h = harness(t)
+  const old = {
+    id: process.env.PAYFAST_MERCHANT_ID,
+    key: process.env.PAYFAST_MERCHANT_KEY,
+    phrase: process.env.PAYFAST_PASSPHRASE,
+  }
+  delete process.env.PAYFAST_MERCHANT_ID
+  delete process.env.PAYFAST_MERCHANT_KEY
+  delete process.env.PAYFAST_PASSPHRASE
+  try {
+    h.workspaces['owner-1'] = { data: {
+      invoices: [{ id: 'eft-invoice', number: 'INV-EFT', clientId: 'client-1', total: 250, status: 'unpaid' }],
+      payments: [],
+      company: { name: 'Workshop', bankName: 'FNB', accountHolder: 'Workshop CC', accountNumber: '1234567890', branchCode: '250655', bankAccountType: 'Business' },
+      settings: {},
+    } }
+    const clientUser = { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-1' }
+    const r = await h.call('POST', '/api/client-portal/pay/:invoiceId', {
+      clientUser, params: { invoiceId: 'eft-invoice' },
+    })
+    assert.equal(r.statusCode, 200)
+    assert.equal(r.payload.configured, false)
+    assert.equal(r.payload.bankDetails.bankName, 'FNB')
+    assert.equal(r.payload.bankDetails.accountName, 'Workshop CC')
+    assert.equal(r.payload.bankDetails.accountNumber, '1234567890')
+    assert.equal(r.payload.bankDetails.branchCode, '250655')
+    assert.equal(r.payload.bankDetails.accountType, 'Business')
+    assert.equal(r.payload.bankDetails.reference, 'INV-EFT')
+  } finally {
+    for (const [key, value] of Object.entries({
+      PAYFAST_MERCHANT_ID: old.id, PAYFAST_MERCHANT_KEY: old.key, PAYFAST_PASSPHRASE: old.phrase,
+    })) {
+      if (value == null) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})

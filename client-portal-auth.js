@@ -523,9 +523,10 @@ function mountClientPortal(app, ctx) {
         company: { name: company.name, email: company.email, phone: company.phone },
         bankDetails: {
           bankName: settings.bankName || company.bankName || '',
-          accountName: settings.bankAccountName || company.bankAccountName || '',
-          accountNumber: settings.bankAccountNumber || company.bankAccountNumber || '',
-          branchCode: settings.bankBranchCode || company.bankBranchCode || '',
+          accountName: settings.bankAccountName || settings.accountHolder || company.accountHolder || company.bankAccountName || company.name || '',
+          accountNumber: settings.bankAccountNumber || settings.accountNumber || company.accountNumber || '',
+          branchCode: settings.bankBranchCode || settings.branchCode || company.branchCode || '',
+          accountType: settings.bankAccountType || company.bankAccountType || '',
           reference: invoice.number || invoice.id,
         },
       })
