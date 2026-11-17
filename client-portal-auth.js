@@ -89,32 +89,65 @@ function mountClientPortal(app, ctx) {
 
   // Payment records are frequently linked through invoiceId rather than a
   // clientId/email. Include only payments linked to this client's invoices.
+  function paymentInvoiceReference(payment) {
+    const nested = payment?.invoice && typeof payment.invoice === 'object' ? payment.invoice : {}
+    const value = payment?.invoiceId ?? payment?.invoice_id ?? payment?.invoiceNumber ??
+      payment?.invoice_number ?? payment?.invoiceRef ?? payment?.invoice_ref ??
+      payment?.invoiceNo ?? payment?.invoice_no ?? payment?.relatedInvoiceId ??
+      payment?.parentInvoiceId ?? nested.id ?? nested.number
+    return value == null ? '' : String(value)
+  }
+
+  function embeddedInvoicePayments(invoices = []) {
+    const rows = []
+    for (const invoice of invoices || []) {
+      for (const key of ['payments', 'paymentHistory', 'payment_history', 'transactions']) {
+        for (const payment of (Array.isArray(invoice?.[key]) ? invoice[key] : [])) {
+          if (!payment || typeof payment !== 'object') continue
+          rows.push({
+            ...payment,
+            invoiceId: payment.invoiceId ?? payment.invoice_id ?? invoice.id,
+            invoiceNumber: payment.invoiceNumber ?? payment.invoice_number ?? invoice.number,
+            clientId: payment.clientId ?? payment.client_id ?? invoice.clientId,
+            clientEmail: payment.clientEmail ?? payment.customerEmail ?? invoice.clientEmail ?? invoice.email,
+          })
+        }
+      }
+    }
+    return rows
+  }
+
   function filterPaymentsByClient(list, clientId, email, invoices = []) {
-    const direct = filterByClient(list, clientId, email)
+    const all = [...(Array.isArray(list) ? list : []), ...embeddedInvoicePayments(invoices)]
+    const direct = filterByClient(all, clientId, email)
     const invoiceKeys = new Set()
     for (const invoice of invoices || []) {
       if (invoice?.id != null) invoiceKeys.add(String(invoice.id))
       if (invoice?.number != null) invoiceKeys.add(String(invoice.number))
     }
-    const seen = new Set(direct.map((p) => String(p.id || p.reference || JSON.stringify(p))))
-    const linked = (Array.isArray(list) ? list : []).filter((payment) => {
-      if (!payment) return false
-      const invoiceKey = payment.invoiceId ?? payment.invoice_id ?? payment.invoiceNumber ?? payment.invoice_number
-      if (invoiceKey == null || !invoiceKeys.has(String(invoiceKey))) return false
+    const out = []
+    const seen = new Set()
+    for (const payment of [...direct, ...all]) {
+      if (!payment) continue
       const key = String(payment.id || payment.reference || JSON.stringify(payment))
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    return [...direct, ...linked]
+      if (seen.has(key)) continue
+      if (direct.includes(payment) || invoiceKeys.has(paymentInvoiceReference(payment))) {
+        seen.add(key)
+        out.push(payment)
+      }
+    }
+    return out
   }
 
   function paymentTotalsByInvoice(payments = []) {
     const totals = new Map()
     for (const payment of payments || []) {
-      const id = payment?.invoiceId ?? payment?.invoice_id ?? payment?.invoiceNumber ?? payment?.invoice_number
-      if (id == null) continue
-      totals.set(String(id), (totals.get(String(id)) || 0) + (Number(payment.amount) || 0))
+      const id = paymentInvoiceReference(payment)
+      if (!id) continue
+      const status = String(payment.status || 'received').toLowerCase()
+      if (['failed', 'declined', 'cancelled', 'canceled', 'void', 'voided', 'reversed', 'refunded'].includes(status)) continue
+      const amount = Number(payment.amount ?? payment.paidAmount ?? payment.value) || 0
+      totals.set(id, (totals.get(id) || 0) + amount)
     }
     return totals
   }
@@ -192,14 +225,15 @@ function mountClientPortal(app, ctx) {
   }
 
   function safeAccountSummary(acc) {
+    const messages = loadPortalMessages().filter((row) => messageForClient(row, acc))
+    const recent = (value) => !!value && (Date.now() - new Date(value).getTime()) < 90000
     return {
-      email: acc.email,
-      name: acc.name,
-      clientId: acc.clientId,
-      active: acc.active !== false,
-      createdAt: acc.createdAt || null,
-      updatedAt: acc.updatedAt || null,
-      lastLoginAt: acc.lastLoginAt || null,
+      email: acc.email, name: acc.name, clientId: acc.clientId,
+      active: acc.active !== false, createdAt: acc.createdAt || null,
+      updatedAt: acc.updatedAt || null, lastLoginAt: acc.lastLoginAt || null,
+      clientOnline: recent(acc.lastSeenAt), businessOnline: recent(acc.businessLastSeenAt),
+      unreadMessages: messages.filter((row) => row.sender === 'client' && !row.readAt).length,
+      lastMessage: messages.length ? safeMessage(messages[messages.length - 1]) : null,
       counts: {
         invoices: Array.isArray(acc.snapshot?.invoices) ? acc.snapshot.invoices.length : 0,
         quotes: Array.isArray(acc.snapshot?.quotes) ? acc.snapshot.quotes.length : 0,
@@ -214,11 +248,39 @@ function mountClientPortal(app, ctx) {
   app.get('/api/client-portal/accounts', auth, (req, res) => {
     const ownerId = req.user.id
     const accounts = loadAccounts()
-    const rows = Object.values(accounts)
-      .filter((acc) => acc.workspaceOwnerId === ownerId)
-      .map(safeAccountSummary)
-      .sort((a, b) => String(a.email).localeCompare(String(b.email)))
+    let changed = false
+    for (const acc of Object.values(accounts)) {
+      if (acc.workspaceOwnerId === ownerId && acc.active !== false) { acc.businessLastSeenAt = now(); changed = true }
+    }
+    if (changed) saveAccounts(accounts)
+    const rows = Object.values(accounts).filter((acc) => acc.workspaceOwnerId === ownerId)
+      .map(safeAccountSummary).sort((a, b) => String(a.email).localeCompare(String(b.email)))
     res.json({ ok: true, accounts: rows })
+  })
+
+  app.post('/api/client-portal/refresh-snapshots', auth, (req, res) => {
+    const ownerId = req.user.id
+    const ws = workspaces[ownerId]
+    if (!ws || !ws.data) return res.status(409).json({ error: 'Workspace data is not available yet; sync the workspace first' })
+    const d = ws.data
+    const accounts = loadAccounts()
+    let refreshed = 0
+    for (const acc of Object.values(accounts)) {
+      if (acc.workspaceOwnerId !== ownerId) continue
+      const invoices = filterByClient(d.invoices, acc.clientId, acc.email)
+      acc.snapshot = {
+        company: (Array.isArray(d.company) ? d.company[0] : d.company) || d.settings?.company || acc.snapshot?.company || {},
+        client: (d.clients || []).find((c) => String(c.id) === String(acc.clientId) || safeEmail(c.email) === acc.email) || acc.snapshot?.client,
+        invoices, quotes: filterByClient(d.quotes, acc.clientId, acc.email),
+        tickets: filterByClient(d.tickets, acc.clientId, acc.email),
+        payments: filterPaymentsByClient(d.payments, acc.clientId, acc.email, invoices),
+        updatedAt: now(),
+      }
+      acc.updatedAt = now()
+      refreshed++
+    }
+    saveAccounts(accounts)
+    res.json({ ok: true, refreshed })
   })
 
   app.patch('/api/client-portal/accounts/:email/status', auth, (req, res) => {
@@ -643,6 +705,9 @@ function mountClientPortal(app, ctx) {
     const accounts = loadAccounts()
     const acc = accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)]
     if (!acc || acc.active === false) return res.status(404).json({ error: 'Portal account not found' })
+    acc.lastSeenAt = now()
+    accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)] = acc
+    saveAccounts(accounts)
     const rows = loadPortalMessages().filter((row) => messageForClient(row, acc)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     let changed = false
     for (const row of rows) {
@@ -653,6 +718,17 @@ function mountClientPortal(app, ctx) {
       return match ? { ...row, readAt: match.readAt } : row
     }))
     res.json({ ok: true, messages: rows.map(safeMessage), unread: rows.filter((row) => row.sender === 'business' && !row.readAt).length })
+  })
+
+  app.post('/api/client-portal/presence', clientAuth, (req, res) => {
+    const accounts = loadAccounts()
+    const acc = accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)]
+    if (!acc || acc.active === false) return res.status(404).json({ error: 'Portal account not found' })
+    acc.lastSeenAt = now()
+    accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)] = acc
+    saveAccounts(accounts)
+    const businessOnline = !!acc.businessLastSeenAt && (Date.now() - new Date(acc.businessLastSeenAt).getTime()) < 90000
+    res.json({ ok: true, clientOnline: true, businessOnline, businessLastSeenAt: acc.businessLastSeenAt || null })
   })
 
   app.post('/api/client-portal/messages', clientAuth, loginRateLimit || ((_r, _s, n) => n()), (req, res) => {
