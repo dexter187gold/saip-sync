@@ -99,7 +99,7 @@ function mountSecurity(app, opts = {}) {
 
 function loginRateLimit(req, res, next) {
   const ip = clientIp(req);
-  const email = String(req.body?.email || '').toLowerCase().trim();
+  const email = String(req.body?.email || req.body?.username || '').toLowerCase().trim();
   const key = 'login:' + ip + ':' + email;
   if (!rateLimit(key, LOGIN_MAX, LOGIN_WINDOW_MS)) {
     return res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
