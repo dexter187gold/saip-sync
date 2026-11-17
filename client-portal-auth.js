@@ -83,6 +83,13 @@ function mountClientPortal(app, ctx) {
     return settingsCompany && typeof settingsCompany === 'object' ? settingsCompany : (fallback || {})
   }
 
+  function findWorkspaceClient(data, clientId, email) {
+    const rows = Array.isArray(data?.clients) ? data.clients : []
+    const em = String(email || '').toLowerCase().trim()
+    return rows.find((client) => String(client.id) === String(clientId)) ||
+      rows.find((client) => em && safeEmail(client.email) === em) || null
+  }
+
   function filterByClient(list, clientId, email) {
     const arr = Array.isArray(list) ? list : []
     const em = String(email || '').toLowerCase().trim()
@@ -277,13 +284,16 @@ function mountClientPortal(app, ctx) {
     let refreshed = 0
     for (const acc of Object.values(accounts)) {
       if (acc.workspaceOwnerId !== ownerId) continue
-      const invoices = filterByClient(d.invoices, acc.clientId, acc.email)
+      const workspaceClient = findWorkspaceClient(d, acc.clientId, acc.email)
+      const clientId = workspaceClient?.id ?? acc.clientId
+      const invoices = filterByClient(d.invoices, clientId, acc.email)
+      acc.clientId = String(clientId)
       acc.snapshot = {
         company: companyFromWorkspace(d, acc.snapshot?.company || {}),
-        client: (d.clients || []).find((c) => String(c.id) === String(acc.clientId) || safeEmail(c.email) === acc.email) || acc.snapshot?.client,
-        invoices, quotes: filterByClient(d.quotes, acc.clientId, acc.email),
-        tickets: filterByClient(d.tickets, acc.clientId, acc.email),
-        payments: filterPaymentsByClient(d.payments, acc.clientId, acc.email, invoices),
+        client: workspaceClient || acc.snapshot?.client,
+        invoices, quotes: filterByClient(d.quotes, clientId, acc.email),
+        tickets: filterByClient(d.tickets, clientId, acc.email),
+        payments: filterPaymentsByClient(d.payments, clientId, acc.email, invoices),
         updatedAt: now(),
       }
       acc.updatedAt = now()
@@ -333,7 +343,7 @@ function mountClientPortal(app, ctx) {
     const body = req.body || {}
     const email = safeEmail(body.email)
     if (!email) return res.status(400).json({ error: 'Valid client email required' })
-    const clientId = String(body.clientId || body.id || '').trim()
+    let clientId = String(body.clientId || body.id || '').trim()
     if (!clientId) return res.status(400).json({ error: 'clientId required' })
 
     const ownerId = req.user.id
@@ -361,6 +371,8 @@ function mountClientPortal(app, ctx) {
     const ws = workspaces[ownerId]
     if (ws && ws.data) {
       const d = ws.data
+      const workspaceClient = findWorkspaceClient(d, clientId, email)
+      if (workspaceClient?.id != null) clientId = String(workspaceClient.id)
       snapshot.invoices = filterByClient(d.invoices, clientId, email)
       snapshot.quotes = filterByClient(d.quotes, clientId, email)
       snapshot.tickets = filterByClient(d.tickets, clientId, email)
@@ -419,7 +431,7 @@ function mountClientPortal(app, ctx) {
       const d = ws.data
       acc.snapshot = {
         company: companyFromWorkspace(d, acc.snapshot?.company || {}),
-        client: (d.clients || []).find((c) => c.id === clientId) || acc.snapshot?.client,
+        client: workspaceClient || acc.snapshot?.client,
         invoices: filterByClient(d.invoices, clientId, email),
         quotes: filterByClient(d.quotes, clientId, email),
         tickets: filterByClient(d.tickets, clientId, email),
@@ -509,11 +521,12 @@ function mountClientPortal(app, ctx) {
     const ws = workspaces[acc.workspaceOwnerId]
     if (ws && ws.data) {
       const d = ws.data
-      const clientId = acc.clientId
+      const workspaceClient = findWorkspaceClient(d, acc.clientId, acc.email)
+      const clientId = workspaceClient?.id ?? acc.clientId
       const email = acc.email
       snap = {
         company: companyFromWorkspace(d, snap.company || {}),
-        client: (d.clients || []).find((c) => String(c.id) === String(clientId) || safeEmail(c.email) === email) || snap.client,
+        client: workspaceClient || snap.client,
         invoices: filterByClient(d.invoices, clientId, email),
         quotes: filterByClient(d.quotes, clientId, email),
         tickets: filterByClient(d.tickets, clientId, email),
@@ -560,7 +573,9 @@ function mountClientPortal(app, ctx) {
     const data = ws?.data || {}
     const snap = acc.snapshot || {}
     const invoices = Array.isArray(data.invoices) ? data.invoices : (snap.invoices || [])
-    const clientInvoices = filterByClient(invoices, acc.clientId, acc.email)
+    const workspaceClient = findWorkspaceClient(data, acc.clientId, acc.email)
+    const canonicalClientId = workspaceClient?.id ?? acc.clientId
+    const clientInvoices = filterByClient(invoices, canonicalClientId, acc.email)
     const payments = filterPaymentsByClient(
       Array.isArray(data.payments) ? data.payments : (snap.payments || []),
       acc.clientId, acc.email, clientInvoices,
