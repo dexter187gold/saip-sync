@@ -440,11 +440,11 @@ function mountClientPortal(app, ctx) {
       const email = acc.email
       snap = {
         company: d.company || d.settings?.company || snap.company || {},
-        client: (d.clients || []).find((c) => c.id === clientId) || snap.client,
+        client: (d.clients || []).find((c) => String(c.id) === String(clientId) || safeEmail(c.email) === email) || snap.client,
         invoices: filterByClient(d.invoices, clientId, email),
         quotes: filterByClient(d.quotes, clientId, email),
         tickets: filterByClient(d.tickets, clientId, email),
-        payments: filterByClient(d.payments, clientId, email),
+        payments: filterPaymentsByClient(d.payments, clientId, email, filterByClient(d.invoices, clientId, email)),
         updatedAt: now(),
       }
     }
