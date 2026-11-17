@@ -555,6 +555,7 @@ function mountClientPortal(app, ctx) {
 
   app.post('/api/client-portal/quote-decision', clientAuth, (req, res) => {
     const { quoteId, decision } = req.body || {}
+    const note = String(req.body?.note || req.body?.reason || '').slice(0, 500)
     const d = String(decision || '').toLowerCase()
     if (!quoteId || !['accepted', 'rejected', 'accept', 'reject'].includes(d)) {
       return res.status(400).json({ error: 'quoteId and decision (accepted|rejected) required' })
@@ -582,9 +583,22 @@ function mountClientPortal(app, ctx) {
     if (!target || !belongsToAccount(target)) {
       return res.status(404).json({ error: 'Quote not found' })
     }
+    if (['accepted', 'rejected', 'converted'].includes(String(target.status || '').toLowerCase()) || target.portalDecision) {
+      return res.status(409).json({ error: 'Quote already decided' })
+    }
 
+    const decisionAt = now()
     const updateOwnedQuote = (quotes) => quotes.map((q) =>
-      matchesQuote(q) && belongsToAccount(q) ? { ...q, status, portalDecidedAt: now() } : q,
+      matchesQuote(q) && belongsToAccount(q) ? {
+        ...q,
+        status,
+        portalDecision: status,
+        portalDecisionAt: decisionAt,
+        portalDecidedAt: decisionAt,
+        portalDecisionReason: note || null,
+        portalNote: note || null,
+        updatedAt: decisionAt,
+      } : q,
     )
     if (workspaceQuotes) {
       ws.data.quotes = updateOwnedQuote(workspaceQuotes)
