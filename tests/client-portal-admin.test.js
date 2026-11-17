@@ -337,7 +337,7 @@ test('client portal messaging is persistent and isolated to the signed-in client
   assert.equal(thread.payload.messages.length, 1)
   assert.equal(thread.payload.messages[0].message, 'Can you confirm when my repair will be ready?')
   const otherClient = await h.call('GET', '/api/client-portal/messages', {
-    clientUser: { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'client-2' },
+    clientUser: { workspaceOwnerId: 'owner-2', email: 'client@example.com', clientId: 'client-2' },
   })
   assert.equal(otherClient.payload.messages.length, 0)
 })
@@ -357,7 +357,7 @@ test('business can reply only to a portal account in its own workspace', async (
   assert.equal(thread.statusCode, 200)
   assert.equal(thread.payload.messages.length, 2)
   const denied = await h.call('POST', '/api/client-portal/messages/business/reply', {
-    actorId: 'owner-2', body: { email: 'client@example.com', message: 'Should not be sent.' },
+    actorId: 'owner-3', body: { email: 'client@example.com', message: 'Should not be sent.' },
   })
   assert.equal(denied.statusCode, 404)
 })
