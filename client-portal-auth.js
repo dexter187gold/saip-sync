@@ -366,7 +366,7 @@ function mountClientPortal(app, ctx) {
   })
 
   app.post('/api/client-portal/login', loginRateLimit || ((_r, _s, n) => n()), (req, res) => {
-    const email = safeEmail(req.body?.email)
+    const email = safeEmail(req.body?.email || req.body?.username)
     const pin = String(req.body?.pin || req.body?.password || '').trim()
     if (!email || !pin) return res.status(400).json({ error: 'Email and PIN required' })
 
