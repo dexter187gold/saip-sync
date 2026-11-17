@@ -216,6 +216,7 @@ test('client portal PayFast checkout is limited to the signed-in client and retu
     h.workspaces['owner-1'] = { data: {
       invoices: [
         { id: 'own-invoice', number: 'INV-OWN', clientId: 'client-1', total: 150, amountPaid: 50, status: 'partial' },
+        { id: 'email-invoice', number: 'INV-EMAIL', clientEmail: 'client@example.com', total: 75, status: 'unpaid' },
         { id: 'other-invoice', number: 'INV-OTHER', clientId: 'client-2', total: 500, status: 'unpaid' },
       ],
       payments: [{ id: 'pay-1', invoiceId: 'own-invoice', clientId: 'client-1', amount: 50 }],
@@ -231,6 +232,11 @@ test('client portal PayFast checkout is limited to the signed-in client and retu
     assert.equal(ok.payload.amount, 100)
     assert.equal(ok.payload.processUrl, 'https://sandbox.payfast.co.za/eng/process')
     assert.ok(ok.payload.fields.signature)
+    const emailOwned = await h.call('POST', '/api/client-portal/pay/:invoiceId', {
+      clientUser, params: { invoiceId: 'email-invoice' },
+    })
+    assert.equal(emailOwned.statusCode, 200)
+    assert.equal(emailOwned.payload.configured, true)
     const denied = await h.call('POST', '/api/client-portal/pay/:invoiceId', {
       clientUser, params: { invoiceId: 'other-invoice' },
     })

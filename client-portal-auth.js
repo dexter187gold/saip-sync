@@ -487,14 +487,13 @@ function mountClientPortal(app, ctx) {
     const data = ws?.data || {}
     const snap = acc.snapshot || {}
     const invoices = Array.isArray(data.invoices) ? data.invoices : (snap.invoices || [])
+    const clientInvoices = filterByClient(invoices, acc.clientId, acc.email)
     const payments = filterPaymentsByClient(
       Array.isArray(data.payments) ? data.payments : (snap.payments || []),
-      acc.clientId, acc.email,
-      invoices.filter((i) => String(i.clientId ?? i.client_id ?? '') === String(acc.clientId)),
+      acc.clientId, acc.email, clientInvoices,
     )
-    const invoice = invoices.find((i) =>
-      (String(i.id) === String(req.params.invoiceId) || String(i.number) === String(req.params.invoiceId)) &&
-      String(i.clientId ?? i.client_id ?? '') === String(acc.clientId)
+    const invoice = clientInvoices.find((i) =>
+      String(i.id) === String(req.params.invoiceId) || String(i.number) === String(req.params.invoiceId)
     )
     if (!invoice) return res.status(404).json({ error: 'Invoice not found for this client' })
     if (['cancelled', 'canceled', 'void', 'voided'].includes(String(invoice.status || '').toLowerCase())) {
