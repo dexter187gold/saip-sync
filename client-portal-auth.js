@@ -27,6 +27,9 @@ function mountClientPortal(app, ctx) {
 
   const ACCOUNTS_FILE = path.join(DATA_DIR, 'client_portal_accounts.json')
   const SESSIONS_FILE = path.join(DATA_DIR, 'client_portal_sessions.json')
+  // Presence is ephemeral by design: a process restart correctly returns users to offline.
+  const BUSINESS_PRESENCE = new Map()
+  const CLIENT_PRESENCE = new Map()
 
   function loadAccounts() {
     return loadJson(ACCOUNTS_FILE, {})
@@ -250,7 +253,7 @@ function mountClientPortal(app, ctx) {
       email: acc.email, name: acc.name, clientId: acc.clientId,
       active: acc.active !== false, createdAt: acc.createdAt || null,
       updatedAt: acc.updatedAt || null, lastLoginAt: acc.lastLoginAt || null,
-      clientOnline: recent(acc.lastSeenAt), businessOnline: recent(acc.businessLastSeenAt),
+      clientOnline: recent(CLIENT_PRESENCE.get(accountKey(acc.workspaceOwnerId, acc.email))), businessOnline: recent(BUSINESS_PRESENCE.get(acc.workspaceOwnerId)),
       unreadMessages: messages.filter((row) => row.sender === 'client' && !row.readAt).length,
       lastMessage: messages.length ? safeMessage(messages[messages.length - 1]) : null,
       counts: {
@@ -267,11 +270,7 @@ function mountClientPortal(app, ctx) {
   app.get('/api/client-portal/accounts', auth, (req, res) => {
     const ownerId = req.user.id
     const accounts = loadAccounts()
-    let changed = false
-    for (const acc of Object.values(accounts)) {
-      if (acc.workspaceOwnerId === ownerId && acc.active !== false) { acc.businessLastSeenAt = now(); changed = true }
-    }
-    if (changed) saveAccounts(accounts)
+    BUSINESS_PRESENCE.set(ownerId, Date.now())
     const rows = Object.values(accounts).filter((acc) => acc.workspaceOwnerId === ownerId)
       .map(safeAccountSummary).sort((a, b) => String(a.email).localeCompare(String(b.email)))
     res.json({ ok: true, accounts: rows })
@@ -736,9 +735,7 @@ function mountClientPortal(app, ctx) {
     const accounts = loadAccounts()
     const acc = accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)]
     if (!acc || acc.active === false) return res.status(404).json({ error: 'Portal account not found' })
-    acc.lastSeenAt = now()
-    accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)] = acc
-    saveAccounts(accounts)
+    CLIENT_PRESENCE.set(accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email), Date.now())
     const rows = loadPortalMessages().filter((row) => messageForClient(row, acc)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     let changed = false
     for (const row of rows) {
@@ -755,11 +752,10 @@ function mountClientPortal(app, ctx) {
     const accounts = loadAccounts()
     const acc = accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)]
     if (!acc || acc.active === false) return res.status(404).json({ error: 'Portal account not found' })
-    acc.lastSeenAt = now()
-    accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)] = acc
-    saveAccounts(accounts)
-    const businessOnline = !!acc.businessLastSeenAt && (Date.now() - new Date(acc.businessLastSeenAt).getTime()) < 90000
-    res.json({ ok: true, clientOnline: true, businessOnline, businessLastSeenAt: acc.businessLastSeenAt || null })
+    CLIENT_PRESENCE.set(accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email), Date.now())
+    const businessSeenAt = BUSINESS_PRESENCE.get(acc.workspaceOwnerId) || 0
+    const businessOnline = Date.now() - businessSeenAt < 90000
+    res.json({ ok: true, clientOnline: true, businessOnline })
   })
 
   app.post('/api/client-portal/messages', clientAuth, loginRateLimit || ((_r, _s, n) => n()), (req, res) => {
@@ -776,6 +772,7 @@ function mountClientPortal(app, ctx) {
       relatedType: ['invoice', 'quote', 'job'].includes(String(req.body?.relatedType)) ? String(req.body.relatedType) : null,
       relatedId: String(req.body?.relatedId || '').slice(0, 120) || null,
     }
+    CLIENT_PRESENCE.set(accountKey(acc.workspaceOwnerId, acc.email), Date.now())
     const rows = loadPortalMessages()
     rows.push(row)
     savePortalMessages(rows.slice(-20000))
