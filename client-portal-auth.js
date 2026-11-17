@@ -614,6 +614,109 @@ function mountClientPortal(app, ctx) {
     res.json({ ok: true, quoteId, status })
   })
 
+
+  // Persistent, tenant-isolated two-way client messaging.
+  const MESSAGES_FILE = path.join(DATA_DIR, 'client_portal_messages.json')
+  function loadPortalMessages() {
+    const rows = loadJson(MESSAGES_FILE, [])
+    return Array.isArray(rows) ? rows : []
+  }
+  function savePortalMessages(rows) {
+    saveJson(MESSAGES_FILE, rows)
+    if (git && typeof git.schedulePush === 'function') git.schedulePush('client_portal_messages')
+  }
+  function messageForClient(row, acc) {
+    return row && String(row.workspaceOwnerId) === String(acc.workspaceOwnerId) &&
+      String(row.clientId) === String(acc.clientId) &&
+      String(row.clientEmail || '').toLowerCase() === String(acc.email || '').toLowerCase()
+  }
+  function safeMessage(row) {
+    return {
+      id: row.id, sender: row.sender, senderName: row.senderName,
+      message: row.message, createdAt: row.createdAt,
+      readAt: row.readAt || null, relatedType: row.relatedType || null,
+      relatedId: row.relatedId || null,
+    }
+  }
+
+  app.get('/api/client-portal/messages', clientAuth, (req, res) => {
+    const accounts = loadAccounts()
+    const acc = accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)]
+    if (!acc || acc.active === false) return res.status(404).json({ error: 'Portal account not found' })
+    const rows = loadPortalMessages().filter((row) => messageForClient(row, acc)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    let changed = false
+    for (const row of rows) {
+      if (row.sender === 'business' && !row.readAt) { row.readAt = now(); changed = true }
+    }
+    if (changed) savePortalMessages(loadPortalMessages().map((row) => {
+      const match = rows.find((r) => r.id === row.id)
+      return match ? { ...row, readAt: match.readAt } : row
+    }))
+    res.json({ ok: true, messages: rows.map(safeMessage), unread: rows.filter((row) => row.sender === 'business' && !row.readAt).length })
+  })
+
+  app.post('/api/client-portal/messages', clientAuth, loginRateLimit || ((_r, _s, n) => n()), (req, res) => {
+    const accounts = loadAccounts()
+    const acc = accounts[accountKey(req.clientUser.workspaceOwnerId, req.clientUser.email)]
+    if (!acc || acc.active === false) return res.status(404).json({ error: 'Portal account not found' })
+    const message = String(req.body?.message || '').trim()
+    if (message.length < 1 || message.length > 4000) return res.status(400).json({ error: 'Message must contain 1–4000 characters' })
+    const row = {
+      id: crypto.randomUUID(), workspaceOwnerId: acc.workspaceOwnerId,
+      clientId: String(acc.clientId), clientEmail: acc.email,
+      sender: 'client', senderName: String(acc.name || acc.email).slice(0, 120),
+      message, createdAt: now(), readAt: null,
+      relatedType: ['invoice', 'quote', 'job'].includes(String(req.body?.relatedType)) ? String(req.body.relatedType) : null,
+      relatedId: String(req.body?.relatedId || '').slice(0, 120) || null,
+    }
+    const rows = loadPortalMessages()
+    rows.push(row)
+    savePortalMessages(rows.slice(-20000))
+    res.status(201).json({ ok: true, message: safeMessage(row) })
+  })
+
+  // Business-side inbox: the authenticated workspace owner can only read/reply
+  // to portal threads belonging to accounts issued from their own workspace.
+  app.get('/api/client-portal/messages/business', auth, (req, res) => {
+    const email = safeEmail(req.query?.email)
+    if (!email) return res.status(400).json({ error: 'Valid client email required' })
+    const accounts = loadAccounts()
+    const acc = accounts[accountKey(req.user.id, email)]
+    if (!acc) return res.status(404).json({ error: 'Client portal account not found in this workspace' })
+    const rows = loadPortalMessages().filter((row) => messageForClient(row, acc)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    let changed = false
+    for (const row of rows) {
+      if (row.sender === 'client' && !row.readAt) { row.readAt = now(); changed = true }
+    }
+    if (changed) {
+      const readIds = new Set(rows.filter((r) => r.readAt).map((r) => r.id))
+      savePortalMessages(loadPortalMessages().map((row) => readIds.has(row.id) ? { ...row, readAt: row.readAt || now() } : row))
+    }
+    res.json({ ok: true, email, clientName: acc.name, messages: rows.map(safeMessage), unread: rows.filter((row) => row.sender === 'client' && !row.readAt).length })
+  })
+
+  app.post('/api/client-portal/messages/business/reply', auth, (req, res) => {
+    const email = safeEmail(req.body?.email)
+    const message = String(req.body?.message || '').trim()
+    if (!email) return res.status(400).json({ error: 'Valid client email required' })
+    if (message.length < 1 || message.length > 4000) return res.status(400).json({ error: 'Message must contain 1–4000 characters' })
+    const accounts = loadAccounts()
+    const acc = accounts[accountKey(req.user.id, email)]
+    if (!acc || acc.active === false) return res.status(404).json({ error: 'Active client portal account not found in this workspace' })
+    const row = {
+      id: crypto.randomUUID(), workspaceOwnerId: acc.workspaceOwnerId,
+      clientId: String(acc.clientId), clientEmail: acc.email,
+      sender: 'business', senderName: 'Workshop',
+      message, createdAt: now(), readAt: null,
+      relatedType: ['invoice', 'quote', 'job'].includes(String(req.body?.relatedType)) ? String(req.body.relatedType) : null,
+      relatedId: String(req.body?.relatedId || '').slice(0, 120) || null,
+    }
+    const rows = loadPortalMessages()
+    rows.push(row)
+    savePortalMessages(rows.slice(-20000))
+    res.status(201).json({ ok: true, message: safeMessage(row) })
+  })
+
   app.get('/api/client-portal/health', (_req, res) => {
     res.json({
       ok: true,
