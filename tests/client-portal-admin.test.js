@@ -370,3 +370,46 @@ test('portal messaging rejects empty and oversized messages', async (t) => {
   const long = await h.call('POST', '/api/client-portal/messages', { clientUser, body: { message: 'x'.repeat(4001) } })
   assert.equal(long.statusCode, 400)
 })
+
+
+test('existing portal profiles refresh from current workspace data using the client email identity', async (t) => {
+  const h = harness(t)
+  h.workspaces['owner-1'] = { data: {
+    company: [{ id: 'main', name: 'Qhayisa Workshop', email: 'info@example.com' }],
+    clients: [{ id: 77, name: 'Client One Updated', email: 'client@example.com' }],
+    invoices: [{ id: 'new-invoice', number: 'INV-NEW', clientId: 77, total: 250, status: 'unpaid' }],
+    quotes: [{ id: 'new-quote', clientId: 77, status: 'sent' }],
+    tickets: [{ id: 'new-job', clientId: 77, status: 'in_progress' }],
+    payments: [{ id: 'new-payment', invoiceNumber: 'INV-NEW', amount: 75, method: 'EFT', createdAt: '2026-11-01T10:00:00.000Z' }],
+  }, version: 3 }
+  const refreshed = await h.call('POST', '/api/client-portal/refresh-snapshots')
+  assert.equal(refreshed.statusCode, 200)
+  assert.equal(refreshed.payload.refreshed, 1)
+  const accounts = JSON.parse(fs.readFileSync(path.join(h.dir, 'client_portal_accounts.json'), 'utf8'))
+  const account = accounts['owner-1::client@example.com']
+  assert.equal(String(account.clientId), '77')
+  assert.equal(account.snapshot.company.name, 'Qhayisa Workshop')
+  assert.equal(account.snapshot.invoices.length, 1)
+  assert.equal(account.snapshot.quotes.length, 1)
+  assert.equal(account.snapshot.tickets.length, 1)
+  assert.equal(account.snapshot.payments.length, 1)
+})
+
+test('client dashboard includes invoice-number and nested invoice payment history', async (t) => {
+  const h = harness(t)
+  h.workspaces['owner-1'] = { data: {
+    clients: [{ id: 1, name: 'Client One', email: 'client@example.com' }],
+    invoices: [{
+      id: 'inv-full', number: 'INV-FULL', clientId: 1, total: 200, status: 'partial',
+      paymentHistory: [{ id: 'nested-payment', amount: 30, method: 'Cash', date: '2026-11-02T10:00:00.000Z' }],
+    }],
+    payments: [{ id: 'number-payment', invoiceNumber: 'INV-FULL', amount: 20, method: 'EFT', createdAt: '2026-11-03T10:00:00.000Z' }],
+  }, version: 4 }
+  const clientUser = { workspaceOwnerId: 'owner-1', email: 'client@example.com', clientId: 'stale-client-id' }
+  const r = await h.call('GET', '/api/client-portal/dashboard', { clientUser })
+  assert.equal(r.statusCode, 200)
+  assert.equal(r.payload.invoices.length, 1)
+  assert.equal(r.payload.payments.length, 2)
+  assert.equal(r.payload.summary.totalPaid, 50)
+  assert.equal(r.payload.summary.openBalance, 150)
+})
