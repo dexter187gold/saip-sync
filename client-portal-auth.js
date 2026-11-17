@@ -425,17 +425,20 @@ function mountClientPortal(app, ctx) {
     const acc = accounts[key]
     if (!acc) return res.status(404).json({ error: 'No portal account for this email — issue first' })
 
-    const clientId = acc.clientId
     const ws = workspaces[ownerId]
     if (ws && ws.data) {
       const d = ws.data
+      const workspaceClient = findWorkspaceClient(d, acc.clientId, email)
+      const clientId = workspaceClient?.id ?? acc.clientId
+      const invoices = filterByClient(d.invoices, clientId, email)
+      acc.clientId = String(clientId)
       acc.snapshot = {
         company: companyFromWorkspace(d, acc.snapshot?.company || {}),
         client: workspaceClient || acc.snapshot?.client,
-        invoices: filterByClient(d.invoices, clientId, email),
+        invoices,
         quotes: filterByClient(d.quotes, clientId, email),
         tickets: filterByClient(d.tickets, clientId, email),
-        payments: filterPaymentsByClient(d.payments, clientId, email, filterByClient(d.invoices, clientId, email)),
+        payments: filterPaymentsByClient(d.payments, clientId, email, invoices),
         updatedAt: now(),
       }
     }
