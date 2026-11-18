@@ -9,8 +9,8 @@ const { mountPortal } = require('../portal')
 test('public portal renders valid JavaScript and a bounded loading state', () => {
   const routes = new Map()
   const app = {
-    get(route, handler) { routes.set('GET ' + route, handler) },
-    post(route, handler) { routes.set('POST ' + route, handler) },
+    get(route, ...handlers) { routes.set('GET ' + route, handlers[handlers.length - 1]) },
+    post(route, ...handlers) { routes.set('POST ' + route, handlers[handlers.length - 1]) },
   }
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'saip-portal-test-'))
   try {
