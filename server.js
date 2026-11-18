@@ -105,7 +105,8 @@ function requireSupportAdmin(req, res) {
 function now() { return new Date().toISOString() }
 
 function seedAdmin() {
-  const deletedAdminEmails = new Set((loadJson(DELETED_ADMIN_ACCOUNTS_FILE, []) || []).map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))
+  const deletedAdminRows = loadJson(DELETED_ADMIN_ACCOUNTS_FILE, [])
+  const deletedAdminEmails = new Set((Array.isArray(deletedAdminRows) ? deletedAdminRows : []).map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))
   const defaults = ['admin@sainvoice.pro']
   const envEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
   if (envEmail && !defaults.includes(envEmail)) defaults.push(envEmail)
