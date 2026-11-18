@@ -29,6 +29,7 @@ function setup(t) {
   app.use(express.json())
   mountDevops(app, {
     DATA_DIR,
+    auth: (_req, _res, next) => next(),
     JWT_SECRET: 'test-jwt-secret-with-more-than-32-characters',
     users,
     workspaces,
