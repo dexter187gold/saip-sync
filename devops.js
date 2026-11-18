@@ -10,7 +10,7 @@ let webpush = null
 try { webpush = require('web-push') } catch { /* disabled until dependency is installed */ }
 
 function mountDevops(app, ctx) {
-  const { DATA_DIR, JWT_SECRET, users, workspaces, persistUsers, persistWorkspaces, safeEmail, strongPassword, git, now = () => new Date().toISOString() } = ctx
+  const { DATA_DIR, JWT_SECRET, users, workspaces, persistUsers, persistWorkspaces, passwordResets, persistResets, safeEmail, strongPassword, git, now = () => new Date().toISOString() } = ctx
   const file = path.join(DATA_DIR || path.join(__dirname, 'data'), 'announcements.json')
   let announcements = []
   let loaded = false
@@ -338,7 +338,7 @@ function mountDevops(app, ctx) {
     if(!nextEmail) return res.status(400).json({error:'A valid email address is required'})
     if(nextEmail!==user.email && users[nextEmail]) return res.status(409).json({error:'That email is already registered'})
     const oldEmail=user.email
-    if(nextEmail!==oldEmail){ delete users[oldEmail]; user.email=nextEmail; users[nextEmail]=user }
+    if(nextEmail!==oldEmail){ delete users[oldEmail]; user.email=nextEmail; user.session_version=Number(user.session_version||0)+1; users[nextEmail]=user }
     user.name=name || null; user.role='user'; user.updated_at=now()
     if(persistUsers) persistUsers()
     recordAudit('account.updated',{id:user.id,fromEmail:oldEmail,toEmail:nextEmail,name:user.name},req.developer.email)
@@ -364,6 +364,8 @@ function mountDevops(app, ctx) {
     for(const key of Object.keys(users)) if(users[key]?.id===id) delete users[key]
     if(workspaces?.[id]) delete workspaces[id]
     for(const key of Object.keys(workspaces || {})) if(String(key).startsWith(id+'::')) delete workspaces[key]
+    for(const key of Object.keys(passwordResets || {})) if(String(passwordResets[key]?.email || '').toLowerCase()===String(email).toLowerCase()) delete passwordResets[key]
+    if(persistResets) persistResets()
     if(persistUsers) persistUsers(); if(persistWorkspaces) persistWorkspaces()
     recordAudit('account.deleted',{id,email,workspaceDeleted:true},req.developer.email)
     res.json({ok:true,message:'Account and its workspace records were deleted from the active sync database'})
