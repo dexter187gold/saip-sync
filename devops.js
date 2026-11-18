@@ -356,7 +356,7 @@ function mountDevops(app, ctx) {
     recordAudit('account.password_reset',{id:user.id,email:user.email},req.developer.email)
     res.json({ok:true,message:'Password reset; existing sessions have been revoked'})
   })
-  app.delete('/api/dev/users/:id', developerAuth, (req,res) => {
+  app.delete('/api/dev/users/:id', developerAuth, async (req,res) => {
     const user=Object.values(users || {}).find(u=>u.id===req.params.id)
     if(!user) return res.status(404).json({error:'Account not found'})
     const id=String(user.id), email=String(user.email || '').trim().toLowerCase()
@@ -367,6 +367,27 @@ function mountDevops(app, ctx) {
     }
     const confirmation=String(req.body?.confirmation || '')
     if(confirmation!=='DELETE '+email) return res.status(400).json({error:'Type DELETE '+email+' to confirm permanent account removal'})
+    // The app account and licence entitlement are separate stores. Do not
+    // report success or remove the app account unless the licence server has
+    // acknowledged an idempotent deletion for this exact email.
+    const licenceBase=String(process.env.LICENSE_SERVER_SYNC_URL || '').trim().replace(/\/+$/, '')
+    const licenceToken=String(process.env.LICENSE_SERVER_SYNC_TOKEN || '').trim()
+    if(!licenceBase || !licenceToken) return res.status(503).json({error:'Licence-server deletion sync is not configured. No account was removed.'})
+    let licenceResult
+    try {
+      const response=await fetch(licenceBase+'/api/internal/dev-portal/delete-account', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-Dev-Portal-Sync-Token':licenceToken},
+        body:JSON.stringify({email}),
+        signal:AbortSignal.timeout(15000),
+      })
+      const payload=await response.json().catch(()=>({}))
+      if(!response.ok || payload.ok!==true) return res.status(502).json({error:'Licence server did not confirm deletion. No app account was removed.',licenceServer:payload})
+      licenceResult=payload
+    } catch(error) {
+      console.error('[devops] licence-server account deletion failed:',error.message)
+      return res.status(502).json({error:'Licence server could not be reached. No app account was removed.'})
+    }
     const wasAdmin=String(user.role || '').toLowerCase()==='admin'
     const tombstoneFile=path.join(DATA_DIR || path.join(__dirname,'data'),'deleted-admin-accounts.json')
     if(wasAdmin) {
@@ -416,7 +437,7 @@ function mountDevops(app, ctx) {
     pushSubscriptions=pushSubscriptions.filter(row=>row?.userId!==id && String(row?.email||'').toLowerCase()!==email)
     if(pushSubscriptions.length!==beforeSubscriptions) persistSubscriptions()
     recordAudit(wasAdmin?'admin_account.deleted':'account.deleted',{id,email,role:wasAdmin?'admin':(user.role||'user'),workspaceDeleted:true,branchWorkspacesDeleted:true},req.developer.email)
-    res.json({ok:true,message:(wasAdmin?'Administrator':'User')+' account and active workspace records permanently removed. Existing sessions are invalidated; audit history is retained.'})
+    res.json({ok:true,message:(wasAdmin?'Administrator':'User')+' account removed from the app database and licence server. Existing sessions are invalidated; audit history is retained.',licenceServer:licenceResult})
   })
 
   app.get('/api/dev/audit', developerAuth, (_req, res) => {
