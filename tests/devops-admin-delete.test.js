@@ -25,6 +25,13 @@ function setup(t) {
     reset2: { email: 'user@example.test', expires: '2099-01-01T00:00:00Z' },
   }
   const counts = { users: 0, workspaces: 0, resets: 0 }
+  const oldFetch = global.fetch
+  const oldSyncUrl = process.env.LICENSE_SERVER_SYNC_URL
+  const oldSyncToken = process.env.LICENSE_SERVER_SYNC_TOKEN
+  process.env.LICENSE_SERVER_SYNC_URL = 'https://license.example.test'
+  process.env.LICENSE_SERVER_SYNC_TOKEN = 'test-service-token'
+  global.fetch = async () => Response.json({ ok: true, removed: { account: true, devices: 2, keys: 1 } })
+  t.after(() => { global.fetch = oldFetch; if (oldSyncUrl === undefined) delete process.env.LICENSE_SERVER_SYNC_URL; else process.env.LICENSE_SERVER_SYNC_URL = oldSyncUrl; if (oldSyncToken === undefined) delete process.env.LICENSE_SERVER_SYNC_TOKEN; else process.env.LICENSE_SERVER_SYNC_TOKEN = oldSyncToken })
   const app = express()
   app.use(express.json())
   mountDevops(app, {
@@ -68,6 +75,7 @@ test('developer can permanently delete an administrator account and its workspac
 
   assert.equal(response.status, 200)
   assert.match(payload.message, /Administrator account/)
+  assert.equal(payload.licenceServer.removed.devices, 2)
   assert.equal(state.users['admin@example.test'], undefined)
   assert.equal(state.workspaces['admin-1'], undefined)
   assert.equal(state.workspaces['admin-1::branch-1'], undefined)
