@@ -40,6 +40,8 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const WORKSPACES_FILE = path.join(DATA_DIR, 'workspaces.json')
 const RESET_FILE = path.join(DATA_DIR, 'password_resets.json')
 const SUPPORT_FILE = path.join(DATA_DIR, 'support-tickets.json')
+const WA_CLIENTS_FILE = path.join(DATA_DIR, 'wa-clients.json')
+const TICKETS_INTAKE_FILE = path.join(DATA_DIR, 'tickets-intake.json')
 
 const git = createGitStore(DATA_DIR)
 const gitMeta = git.meta
@@ -66,12 +68,16 @@ let users = {}
 let workspaces = {}
 let passwordResets = {}
 let supportTickets = []
+let waClients = {}
+let ticketsIntake = { items: [] }
 
 function reloadFromDisk() {
   const u = loadJson(USERS_FILE, {})
   const w = loadJson(WORKSPACES_FILE, {})
   const r = loadJson(RESET_FILE, {})
   const s = loadJson(SUPPORT_FILE, [])
+  const wc = loadJson(WA_CLIENTS_FILE, {})
+  const ti = loadJson(TICKETS_INTAKE_FILE, { items: [] })
   for (const k of Object.keys(users)) delete users[k]
   Object.assign(users, u)
   for (const k of Object.keys(workspaces)) delete workspaces[k]
@@ -79,11 +85,16 @@ function reloadFromDisk() {
   for (const k of Object.keys(passwordResets)) delete passwordResets[k]
   Object.assign(passwordResets, r)
   supportTickets.splice(0, supportTickets.length, ...(Array.isArray(s) ? s : []))
+  for (const k of Object.keys(waClients)) delete waClients[k]
+  Object.assign(waClients, wc && typeof wc === 'object' ? wc : {})
+  ticketsIntake.items = Array.isArray(ti?.items) ? ti.items : []
 }
 function persistUsers() { saveJson(USERS_FILE, users); git.schedulePush('users') }
 function persistWorkspaces() { saveJson(WORKSPACES_FILE, workspaces); git.schedulePush('workspaces') }
 function persistResets() { saveJson(RESET_FILE, passwordResets); git.schedulePush('resets') }
 function persistSupportTickets() { saveJson(SUPPORT_FILE, supportTickets); git.schedulePush('support-tickets') }
+function persistWaClients() { saveJson(WA_CLIENTS_FILE, waClients); git.schedulePush('wa-clients') }
+function persistTickets() { saveJson(TICKETS_INTAKE_FILE, ticketsIntake); git.schedulePush('tickets-intake') }
 function currentUser(req) { return Object.values(users).find((u) => u.id === req.user?.id) || null }
 function requireSupportAdmin(req, res) {
   const actor = currentUser(req)
@@ -307,7 +318,7 @@ app.patch('/api/admin/support/tickets/:id', auth, (req, res) => {
 
 app.get('/api/workspace/history', auth, (req, res) => res.json({ ok: true, history: [] }))
 app.post('/api/status/push', auth, (req, res) => res.json({ ok: true, count: 0 }))
-app.get('/api/wa/pending', auth, (req, res) => res.json({ ok: true, count: 0, clients: [] }))
+// WhatsApp intake routes are mounted below with persistent Git-backed stores.
 
 app.get('/', (req, res) => {
   res.json({
@@ -352,13 +363,13 @@ app.post('/api/admin/git-flush', auth, (req, res) => {
   git.flushPush('manual').then((r) => res.json({ ok: !!r.ok, result: r })).catch((e) => res.status(500).json({ error: e.message }))
 })
 
-for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows', './workspace-reset', './devops']) {
+for (const name of ['./authRecover', './payfastItn', './portal', './client-portal-auth', './extras', './oauth', './team', './admin', './wa-flow', './wa-cloud', './ar-brain', './quarters', './quarters-late', './flows', './workspace-reset', './devops', './intake-api']) {
   try {
     const mod = require(name)
     const fn = mod.mountAuthRecover || mod.mountPayfastItn || mod.mountPortal || mod.mountClientPortal || mod.mountExtras || mod.mountOAuth || mod.mountTeam || mod.mountAdmin || mod.mountWaFlow || mod.mountWaCloud || mod.mountArBrain || mod.mountQuarters || mod.mountQuartersLate || mod.mountFlows || mod.mountWorkspaceReset || mod.mountDevops || mod.mount
     if (typeof fn === 'function') {
       try {
-        fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta })
+        fn(app, { DATA_DIR, loadJson, saveJson, workspaces, auth, PUBLIC_BASE, now, users, passwordResets, persistUsers, persistWorkspaces, persistResets, JWT_SECRET, loginRateLimit, strongPassword, safeEmail, ADMIN_EMAIL: process.env.ADMIN_EMAIL || '', git, gitMeta, waClients, persistWaClients, ticketsIntake, persistTickets })
         console.log('[optional]', name)
       } catch (e) { console.warn('[optional]', name, e.message) }
     }
