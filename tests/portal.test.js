@@ -46,8 +46,8 @@ test('public portal renders valid JavaScript and a bounded loading state', () =>
 test('owner can explicitly publish only same-client job attachments to a portal', () => {
   const routes = new Map()
   const app = {
-    get(route, handler) { routes.set('GET ' + route, handler) },
-    post(route, handler) { routes.set('POST ' + route, handler) },
+    get(route, ...handlers) { routes.set('GET ' + route, handlers[handlers.length - 1]) },
+    post(route, ...handlers) { routes.set('POST ' + route, handlers[handlers.length - 1]) },
   }
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'saip-portal-publish-test-'))
   const uid = 'owner-1'
