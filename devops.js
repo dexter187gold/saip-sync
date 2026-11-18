@@ -359,16 +359,64 @@ function mountDevops(app, ctx) {
   app.delete('/api/dev/users/:id', developerAuth, (req,res) => {
     const user=Object.values(users || {}).find(u=>u.id===req.params.id)
     if(!user) return res.status(404).json({error:'Account not found'})
-    if(user.email==='sainvoicepro@gmail.com' || user.role==='admin') return res.status(403).json({error:'Protected owner/administrator account cannot be deleted'})
-    const id=user.id, email=user.email
-    for(const key of Object.keys(users)) if(users[key]?.id===id) delete users[key]
+    const id=String(user.id), email=String(user.email || '').trim().toLowerCase()
+    // The primary developer identity is not an ordinary app administrator and
+    // must never be removable through the registered-users database.
+    if(email==='sainvoicepro@gmail.com' || email===String(req.developer.email || '').toLowerCase()) {
+      return res.status(403).json({error:'The primary developer/owner identity is protected'})
+    }
+    const confirmation=String(req.body?.confirmation || '')
+    if(confirmation!=='DELETE '+email) return res.status(400).json({error:'Type DELETE '+email+' to confirm permanent account removal'})
+    const wasAdmin=String(user.role || '').toLowerCase()==='admin'
+    const tombstoneFile=path.join(DATA_DIR || path.join(__dirname,'data'),'deleted-admin-accounts.json')
+    if(wasAdmin) {
+      try {
+        let deleted=[]
+        if(fs.existsSync(tombstoneFile)) {
+          const parsed=JSON.parse(fs.readFileSync(tombstoneFile,'utf8'))
+          if(Array.isArray(parsed)) deleted=parsed
+        }
+        const normalized=Array.from(new Set([...deleted.map(x=>String(x||'').trim().toLowerCase()),email].filter(Boolean)))
+        writeJsonAtomic(tombstoneFile,normalized)
+        git?.schedulePush?.('deleted-admin-accounts')
+      } catch(e) {
+        console.error('[devops] admin deletion tombstone failed:',e.message)
+        return res.status(500).json({error:'Could not persist the admin deletion safeguard. No account was removed.'})
+      }
+    }
+    // Remove every alias for this identity and its personal + branch workspaces.
+    for(const key of Object.keys(users || {})) if(users[key]?.id===id) delete users[key]
     if(workspaces?.[id]) delete workspaces[id]
     for(const key of Object.keys(workspaces || {})) if(String(key).startsWith(id+'::')) delete workspaces[key]
-    for(const key of Object.keys(passwordResets || {})) if(String(passwordResets[key]?.email || '').toLowerCase()===String(email).toLowerCase()) delete passwordResets[key]
-    if(persistResets) persistResets()
-    if(persistUsers) persistUsers(); if(persistWorkspaces) persistWorkspaces()
-    recordAudit('account.deleted',{id,email,workspaceDeleted:true},req.developer.email)
-    res.json({ok:true,message:'Account and its workspace records were deleted from the active sync database'})
+    // Detach any team accounts that referenced this workspace owner; do not
+    // delete those separate identities.
+    for(const member of Object.values(users || {})) {
+      if(member?.linkedWorkspaceOwnerId===id) {
+        member.linkedWorkspaceOwnerId=null
+        member.teamRole=null
+        member.session_version=Number(member.session_version||0)+1
+        member.updated_at=now()
+      }
+    }
+    let resetChanged=false
+    for(const key of Object.keys(passwordResets || {})) {
+      if(String(passwordResets[key]?.email || '').trim().toLowerCase()===email) {
+        delete passwordResets[key]
+        resetChanged=true
+      }
+    }
+    if(resetChanged && persistResets) persistResets()
+    if(persistUsers) persistUsers()
+    if(persistWorkspaces) persistWorkspaces()
+    // Revoke any ephemeral device/portal records tied to the removed identity.
+    for(const [key,row] of Object.entries(global.__saip_devices || {})) if(row?.userId===id) delete global.__saip_devices[key]
+    for(const [key,row] of Object.entries(global.__saip_portals || {})) if(row?.userId===id) delete global.__saip_portals[key]
+    ensureSubscriptionsLoaded()
+    const beforeSubscriptions=pushSubscriptions.length
+    pushSubscriptions=pushSubscriptions.filter(row=>row?.userId!==id && String(row?.email||'').toLowerCase()!==email)
+    if(pushSubscriptions.length!==beforeSubscriptions) persistSubscriptions()
+    recordAudit(wasAdmin?'admin_account.deleted':'account.deleted',{id,email,role:wasAdmin?'admin':(user.role||'user'),workspaceDeleted:true,branchWorkspacesDeleted:true},req.developer.email)
+    res.json({ok:true,message:(wasAdmin?'Administrator':'User')+' account and active workspace records permanently removed. Existing sessions are invalidated; audit history is retained.'})
   })
 
   app.get('/api/dev/audit', developerAuth, (_req, res) => {
