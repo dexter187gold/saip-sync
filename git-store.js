@@ -29,6 +29,7 @@ const GIT_PUSH_DEBOUNCE_MS = Number(process.env.GIT_PUSH_DEBOUNCE_MS) || 5000
 
 const DATA_JSON_FILES = [
   'users.json',
+  'deleted-admin-accounts.json',
   'workspaces.json',
   'password_resets.json',
   'portals.json',
