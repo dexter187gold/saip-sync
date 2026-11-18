@@ -48,6 +48,18 @@ function mountPortal(app, ctx) {
     const invoices = (data.invoices || []).filter((i) => String(i.clientId) === String(row.clientId))
     const quotes = (data.quotes || []).filter((q) => String(q.clientId) === String(row.clientId))
     const tickets = (data.tickets || []).filter((t) => String(t.clientId) === String(row.clientId))
+    const invoiceIds = new Set(invoices.flatMap((i) => [String(i.id || ''), String(i.number || '')]).filter(Boolean))
+    const payments = (data.payments || []).filter((p) =>
+      String(p.clientId || '') === String(row.clientId) ||
+      invoiceIds.has(String(p.invoiceId || p.invoice_id || p.invoiceNumber || p.invoice_number || ''))
+    ).slice(0, 500)
+    const totalInvoiced = invoices.reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+    const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount || p.paidAmount || p.value) || 0), 0)
+    const statementEntries = [
+      ...invoices.map((i) => ({ date: i.date, type: 'Invoice', reference: i.number || i.id, description: i.notes || 'Invoice issued', debit: Number(i.total) || 0, credit: 0 })),
+      ...payments.map((p) => ({ date: p.date || p.paidAt, type: 'Payment', reference: p.reference || p.invoiceNumber || p.invoice_number || '', description: p.method || 'Payment received', debit: 0, credit: Number(p.amount || p.paidAmount || p.value) || 0 })),
+    ].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+    let attachmentBudget = 0
     const company =
       data.company && !Array.isArray(data.company)
         ? data.company
@@ -64,36 +76,56 @@ function mountPortal(app, ctx) {
         ? { id: client.id, name: client.name, company: client.company }
         : { id: row.clientId, name: 'Client' },
       invoices: invoices.map((i) => ({
-        id: i.id,
-        number: i.number,
-        date: i.date,
-        dueDate: i.dueDate,
-        status: i.status,
-        total: i.total,
-        amountDue: i.amountDue != null ? i.amountDue : i.total,
+        id: i.id, number: i.number, date: i.date, dueDate: i.dueDate,
+        status: i.status, total: i.total, amountDue: i.amountDue != null ? i.amountDue : i.total,
+        amountPaid: i.amountPaid || 0, notes: i.publicNote || i.customerNote || i.notes || '',
+        lines: Array.isArray(i.lines) ? i.lines.slice(0, 100).map((line) => ({
+          description: String(line.description || '').slice(0, 500),
+          qty: Number(line.qty) || 1, price: Number(line.price) || 0,
+        })) : [],
+        fromTicketIds: Array.isArray(i.fromTicketIds) ? i.fromTicketIds : [],
       })),
       quotes: quotes.map((q) => ({
-        id: q.id,
-        number: q.number,
-        date: q.date,
-        validUntil: q.validUntil,
-        status: q.status || 'sent',
-        total: q.total,
+        id: q.id, number: q.number, date: q.date, validUntil: q.validUntil,
+        status: q.status || 'sent', total: q.total,
         lines: Array.isArray(q.lines) ? q.lines.slice(0, 20) : [],
-        portalDecision: q.portalDecision || null,
-        portalDecisionAt: q.portalDecisionAt || null,
+        portalDecision: q.portalDecision || null, portalDecisionAt: q.portalDecisionAt || null,
         portalNote: q.portalNote || q.portalDecisionReason || null,
       })),
-      tickets: tickets.slice(0, 30).map((t) => ({
-        id: t.id,
-        number: t.number,
-        title: t.title,
-        status: t.status || 'open',
-        device: t.device || t.deviceLabel || '',
-        imei: t.imei || '',
-        promisedAt: t.promisedAt || t.dueDate || t.slaDue || null,
-        publicNote: t.publicNote || t.customerNote || '',
+      tickets: tickets.slice(0, 100).map((t) => {
+        const sharedFiles = []
+        for (const file of [...(Array.isArray(t.photos) ? t.photos : []), ...(Array.isArray(t.attachments) ? t.attachments : [])]) {
+          if (attachmentBudget >= 2000000) break
+          if (!file || !file.dataUrl) continue
+          const estimated = Number(file.size) || Math.ceil(String(file.dataUrl).length * 0.75)
+          if (estimated > 1500000 || attachmentBudget + estimated > 2000000) continue
+          attachmentBudget += estimated
+          sharedFiles.push({ id: file.id, name: file.name || 'Job attachment', mime: file.mime || 'application/octet-stream', dataUrl: file.dataUrl })
+        }
+        return {
+          id: t.id, number: t.number, title: t.title || t.subject || 'Service job',
+          status: t.status || 'open', jobType: t.jobType || '',
+          device: t.device || t.deviceLabel || '', imei: t.imei || '',
+          promisedAt: t.promisedAt || t.dueDate || t.slaDue || null,
+          scheduledDate: t.scheduledDate || '', scheduledTime: t.scheduledTime || '',
+          siteAddress: t.siteAddress || t.location || '',
+          description: t.publicNote || t.customerNote || t.description || '',
+          workDone: t.workDone || '', technician: t.assignee || t.technician || '',
+          priority: t.priority || '', devices: t.devices || t.serials || '',
+          parts: Array.isArray(t.parts) ? t.parts.slice(0, 50) : [],
+          invoiceId: t.invoiceId || '', attachments: sharedFiles,
+        }
+      }),
+      payments: payments.map((p) => ({
+        id: p.id, amount: Number(p.amount || p.paidAmount || p.value) || 0,
+        date: p.date || p.paidAt || '', method: p.method || '',
+        reference: p.reference || p.invoiceNumber || p.invoice_number || '',
+        status: p.status || 'received',
       })),
+      accountStatement: {
+        generatedAt: new Date().toISOString(), totalInvoiced, totalPaid,
+        openBalance: Math.max(0, totalInvoiced - totalPaid), entries: statementEntries,
+      },
       expires: row.expires,
       token,
     }
