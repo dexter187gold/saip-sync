@@ -260,7 +260,7 @@ function mountPortal(app, ctx) {
       const bytes = Math.floor(match[2].length * 0.75)
       if (bytes > 2500000) return res.status(413).json({ error: 'Each shared file must be 2.5 MB or smaller' })
       addedBytes += bytes
-      if (addedBytes > 8000000) return res.status(413).json({ error: 'Share up to 8 MB per upload' })
+      if (addedBytes > 5000000) return res.status(413).json({ error: 'Share up to 5 MB per upload' })
       const id = String(file.id || crypto.randomUUID())
       const safeName = String(file.name || 'Job attachment').replace(/[\\/\\r\\n]/g, '_').slice(0, 120)
       const mime = match[1].toLowerCase()
@@ -272,7 +272,7 @@ function mountPortal(app, ctx) {
       if (idx >= 0) next[idx] = saved
       else next.push(saved)
     }
-    if (next.length > 100) return res.status(413).json({ error: 'This portal has reached its shared-file limit' })
+    if (next.length > 100 || next.reduce((sum, file) => sum + (Number(file.size) || 0), 0) > 20000000) return res.status(413).json({ error: 'This portal has reached its shared-file storage limit' })
     row.publishedAttachments = next
     savePortals(portals)
     res.json({ ok: true, published: files.length, total: next.length })
