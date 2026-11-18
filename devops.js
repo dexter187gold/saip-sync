@@ -5,11 +5,12 @@
 const fs = require('fs')
 const path = require('path')
 const jwt = require('jsonwebtoken')
+const bcrypt = require('bcryptjs')
 let webpush = null
 try { webpush = require('web-push') } catch { /* disabled until dependency is installed */ }
 
 function mountDevops(app, ctx) {
-  const { DATA_DIR, JWT_SECRET, users, git, now = () => new Date().toISOString() } = ctx
+  const { DATA_DIR, JWT_SECRET, users, workspaces, persistUsers, persistWorkspaces, safeEmail, strongPassword, git, now = () => new Date().toISOString() } = ctx
   const file = path.join(DATA_DIR || path.join(__dirname, 'data'), 'announcements.json')
   let announcements = []
   let loaded = false
@@ -314,6 +315,58 @@ function mountDevops(app, ctx) {
     if (!persistIncidents()) return res.status(500).json({ error: 'Could not update incident' })
     if (changes.length) recordAudit('incident.updated', { id: incident.id, changes }, req.developer.email)
     res.json({ ok: true, incident, incidents })
+  })
+
+  // Developer-only account database. Password hashes and session secrets are never returned.
+  function publicAccount(u) {
+    return { id:u.id, email:u.email, name:u.name || '', role:u.role || 'user', created_at:u.created_at || null,
+      updated_at:u.updated_at || null, has_workspace:!!workspaces?.[u.id], google:!!u.google_id,
+      linkedWorkspaceOwnerId:u.linkedWorkspaceOwnerId || null, teamRole:u.teamRole || null };
+  }
+  app.get('/api/dev/users', developerAuth, (_req,res) => {
+    res.setHeader('Cache-Control','no-store')
+    res.json({ok:true, users:Object.values(users || {}).map(publicAccount).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))})
+  })
+  app.patch('/api/dev/users/:id', developerAuth, (req,res) => {
+    const user=Object.values(users || {}).find(u=>u.id===req.params.id)
+    if(!user) return res.status(404).json({error:'Account not found'})
+    if(user.email==='sainvoicepro@gmail.com' || user.role==='admin') return res.status(403).json({error:'Protected owner/administrator account cannot be edited here'})
+    const name=req.body?.name == null ? user.name : String(req.body.name).trim().slice(0,120)
+    const role=req.body?.role == null ? user.role : String(req.body.role).trim().toLowerCase()
+    if(!['user'].includes(role)) return res.status(400).json({error:'Developer console can only assign the standard user role'})
+    const nextEmail=req.body?.email == null ? user.email : (typeof safeEmail==='function' ? safeEmail(req.body.email) : String(req.body.email||'').trim().toLowerCase())
+    if(!nextEmail) return res.status(400).json({error:'A valid email address is required'})
+    if(nextEmail!==user.email && users[nextEmail]) return res.status(409).json({error:'That email is already registered'})
+    const oldEmail=user.email
+    if(nextEmail!==oldEmail){ delete users[oldEmail]; user.email=nextEmail; users[nextEmail]=user }
+    user.name=name || null; user.role='user'; user.updated_at=now()
+    if(persistUsers) persistUsers()
+    recordAudit('account.updated',{id:user.id,fromEmail:oldEmail,toEmail:nextEmail,name:user.name},req.developer.email)
+    res.json({ok:true,user:publicAccount(user)})
+  })
+  app.post('/api/dev/users/:id/reset-password', developerAuth, (req,res) => {
+    const user=Object.values(users || {}).find(u=>u.id===req.params.id)
+    if(!user) return res.status(404).json({error:'Account not found'})
+    if(user.email==='sainvoicepro@gmail.com' || user.role==='admin') return res.status(403).json({error:'Protected owner/administrator password cannot be reset here'})
+    const password=String(req.body?.password||'')
+    const check=typeof strongPassword==='function' ? strongPassword(password) : {ok:password.length>=12,error:'Password must be at least 12 characters'}
+    if(!check.ok) return res.status(400).json({error:check.error || 'Password does not meet security requirements'})
+    user.password_hash=bcrypt.hashSync(password,12); user.session_version=Number(user.session_version||0)+1; user.updated_at=now()
+    if(persistUsers) persistUsers()
+    recordAudit('account.password_reset',{id:user.id,email:user.email},req.developer.email)
+    res.json({ok:true,message:'Password reset; existing sessions have been revoked'})
+  })
+  app.delete('/api/dev/users/:id', developerAuth, (req,res) => {
+    const user=Object.values(users || {}).find(u=>u.id===req.params.id)
+    if(!user) return res.status(404).json({error:'Account not found'})
+    if(user.email==='sainvoicepro@gmail.com' || user.role==='admin') return res.status(403).json({error:'Protected owner/administrator account cannot be deleted'})
+    const id=user.id, email=user.email
+    for(const key of Object.keys(users)) if(users[key]?.id===id) delete users[key]
+    if(workspaces?.[id]) delete workspaces[id]
+    for(const key of Object.keys(workspaces || {})) if(String(key).startsWith(id+'::')) delete workspaces[key]
+    if(persistUsers) persistUsers(); if(persistWorkspaces) persistWorkspaces()
+    recordAudit('account.deleted',{id,email,workspaceDeleted:true},req.developer.email)
+    res.json({ok:true,message:'Account and its workspace records were deleted from the active sync database'})
   })
 
   app.get('/api/dev/audit', developerAuth, (_req, res) => {
