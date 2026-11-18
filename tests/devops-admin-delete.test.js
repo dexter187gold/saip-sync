@@ -30,7 +30,7 @@ function setup(t) {
   const oldSyncToken = process.env.LICENSE_SERVER_SYNC_TOKEN
   process.env.LICENSE_SERVER_SYNC_URL = 'https://license.example.test'
   process.env.LICENSE_SERVER_SYNC_TOKEN = 'test-service-token'
-  global.fetch = async () => Response.json({ ok: true, removed: { account: true, devices: 2, keys: 1 } })
+  global.fetch = async (url, options) => String(url).startsWith('https://license.example.test') ? Response.json({ ok: true, removed: { account: true, devices: 2, keys: 1 } }) : oldFetch(url, options)
   t.after(() => { global.fetch = oldFetch; if (oldSyncUrl === undefined) delete process.env.LICENSE_SERVER_SYNC_URL; else process.env.LICENSE_SERVER_SYNC_URL = oldSyncUrl; if (oldSyncToken === undefined) delete process.env.LICENSE_SERVER_SYNC_TOKEN; else process.env.LICENSE_SERVER_SYNC_TOKEN = oldSyncToken })
   const app = express()
   app.use(express.json())
