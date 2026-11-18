@@ -73,7 +73,7 @@ function ensureDataFiles(DATA_DIR) {
     const f = path.join(DATA_DIR, name)
     if (!fs.existsSync(f)) {
       try {
-        const empty = name.includes('support-tickets') || name.includes('decision') || name.includes('announcements') ? '[]\n' : name.includes('portal') && !name.includes('accounts') ? '{}\n' : '{}\n'
+        const empty = name.includes('support-tickets') || name.includes('decision') || name.includes('announcements') || name.includes('deleted-admin-accounts') ? '[]\n' : name.includes('portal') && !name.includes('accounts') ? '{}\n' : '{}\n'
         fs.writeFileSync(f, empty, 'utf8')
       } catch {}
     }
