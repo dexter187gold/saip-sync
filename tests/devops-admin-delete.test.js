@@ -46,18 +46,27 @@ function setup(t) {
     'test-jwt-secret-with-more-than-32-characters',
     { expiresIn: '5m', issuer: 'saip-sync', audience: 'saip-developer-portal' },
   )
-  return { app, users, workspaces, passwordResets, counts, DATA_DIR, token }
+  const server = app.listen(0)
+  t.after(() => server.close())
+  const base = new Promise(resolve => server.once('listening', () => resolve('http://127.0.0.1:' + server.address().port)))
+  async function call(method, pathname, body) {
+    const url = await base
+    return fetch(url + pathname, {
+      method,
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })
+  }
+  return { app, users, workspaces, passwordResets, counts, DATA_DIR, token, call }
 }
 
 test('developer can permanently delete an administrator account and its workspaces', async t => {
   const state = setup(t)
-  const response = await require('supertest')(state.app)
-    .delete('/api/dev/users/admin-1')
-    .set('Authorization', 'Bearer ' + state.token)
-    .send({ confirmation: 'DELETE admin@example.test' })
+  const response = await state.call('DELETE', '/api/dev/users/admin-1', { confirmation: 'DELETE admin@example.test' })
+  const payload = await response.json()
 
   assert.equal(response.status, 200)
-  assert.match(response.body.message, /Administrator account/)
+  assert.match(payload.message, /Administrator account/)
   assert.equal(state.users['admin@example.test'], undefined)
   assert.equal(state.workspaces['admin-1'], undefined)
   assert.equal(state.workspaces['admin-1::branch-1'], undefined)
@@ -72,28 +81,18 @@ test('developer can permanently delete an administrator account and its workspac
 
 test('developer deletion requires exact confirmation and protects primary developer identity', async t => {
   const state = setup(t)
-  const request = require('supertest')
-  const missingConfirmation = await request(state.app)
-    .delete('/api/dev/users/admin-1')
-    .set('Authorization', 'Bearer ' + state.token)
-    .send({ confirmation: 'DELETE wrong@example.test' })
+  const missingConfirmation = await state.call('DELETE', '/api/dev/users/admin-1', { confirmation: 'DELETE wrong@example.test' })
   assert.equal(missingConfirmation.status, 400)
   assert.ok(state.users['admin@example.test'])
 
-  const ownerDelete = await request(state.app)
-    .delete('/api/dev/users/owner-1')
-    .set('Authorization', 'Bearer ' + state.token)
-    .send({ confirmation: 'DELETE sainvoicepro@gmail.com' })
+  const ownerDelete = await state.call('DELETE', '/api/dev/users/owner-1', { confirmation: 'DELETE sainvoicepro@gmail.com' })
   assert.equal(ownerDelete.status, 403)
   assert.ok(state.users['sainvoicepro@gmail.com'])
 })
 
 test('developer can still delete a standard user account', async t => {
   const state = setup(t)
-  const response = await require('supertest')(state.app)
-    .delete('/api/dev/users/user-1')
-    .set('Authorization', 'Bearer ' + state.token)
-    .send({ confirmation: 'DELETE user@example.test' })
+  const response = await state.call('DELETE', '/api/dev/users/user-1', { confirmation: 'DELETE user@example.test' })
   assert.equal(response.status, 200)
   assert.equal(state.users['user@example.test'], undefined)
   assert.equal(state.workspaces['user-1'], undefined)
