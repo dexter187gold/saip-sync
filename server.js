@@ -42,6 +42,7 @@ const RESET_FILE = path.join(DATA_DIR, 'password_resets.json')
 const SUPPORT_FILE = path.join(DATA_DIR, 'support-tickets.json')
 const WA_CLIENTS_FILE = path.join(DATA_DIR, 'wa-clients.json')
 const TICKETS_INTAKE_FILE = path.join(DATA_DIR, 'tickets-intake.json')
+const DELETED_ADMIN_ACCOUNTS_FILE = path.join(DATA_DIR, 'deleted-admin-accounts.json')
 
 const git = createGitStore(DATA_DIR)
 const gitMeta = git.meta
@@ -104,10 +105,15 @@ function requireSupportAdmin(req, res) {
 function now() { return new Date().toISOString() }
 
 function seedAdmin() {
+  const deletedAdminEmails = new Set((loadJson(DELETED_ADMIN_ACCOUNTS_FILE, []) || []).map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))
   const defaults = ['admin@sainvoice.pro']
   const envEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim()
   if (envEmail && !defaults.includes(envEmail)) defaults.push(envEmail)
   for (const key of defaults) {
+    if (deletedAdminEmails.has(key)) {
+      console.log('[admin] skipped previously deleted admin account', key)
+      continue
+    }
     if (!users[key]) {
       const id = uuidv4()
       users[key] = { id, email: key, password_hash: bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10), name: 'Administrator', role: 'admin', created_at: now(), updated_at: now() }
