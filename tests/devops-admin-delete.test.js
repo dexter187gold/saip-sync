@@ -30,7 +30,8 @@ function setup(t) {
   const oldSyncToken = process.env.LICENSE_SERVER_SYNC_TOKEN
   process.env.LICENSE_SERVER_SYNC_URL = 'https://license.example.test'
   process.env.LICENSE_SERVER_SYNC_TOKEN = 'test-service-token'
-  global.fetch = async (url, options) => String(url).startsWith('https://license.example.test') ? Response.json({ ok: true, removed: { account: true, devices: 2, keys: 1 } }) : oldFetch(url, options)
+  let remoteResponse = Response.json({ ok: true, removed: { account: true, devices: 2, keys: 1 } })
+  global.fetch = async (url, options) => String(url).startsWith('https://license.example.test') ? remoteResponse : oldFetch(url, options)
   t.after(() => { global.fetch = oldFetch; if (oldSyncUrl === undefined) delete process.env.LICENSE_SERVER_SYNC_URL; else process.env.LICENSE_SERVER_SYNC_URL = oldSyncUrl; if (oldSyncToken === undefined) delete process.env.LICENSE_SERVER_SYNC_TOKEN; else process.env.LICENSE_SERVER_SYNC_TOKEN = oldSyncToken })
   const app = express()
   app.use(express.json())
@@ -65,7 +66,7 @@ function setup(t) {
       body: JSON.stringify(body || {}),
     })
   }
-  return { app, users, workspaces, passwordResets, counts, DATA_DIR, token, call }
+  return { app, users, workspaces, passwordResets, counts, DATA_DIR, token, call, setRemoteResponse: value => { remoteResponse = value } }
 }
 
 test('developer can permanently delete an administrator account and its workspaces', async t => {
@@ -105,5 +106,16 @@ test('developer can still delete a standard user account', async t => {
   assert.equal(response.status, 200)
   assert.equal(state.users['user@example.test'], undefined)
   assert.equal(state.workspaces['user-1'], undefined)
+  assert.equal(fs.existsSync(path.join(state.DATA_DIR, 'deleted-admin-accounts.json')), false)
+})
+
+
+test('developer account deletion fails closed when licence server does not confirm', async t => {
+  const state = setup(t)
+  state.setRemoteResponse(Response.json({ ok: false, error: 'unavailable' }, { status: 503 }))
+  const response = await state.call('DELETE', '/api/dev/users/admin-1', { confirmation: 'DELETE admin@example.test' })
+  assert.equal(response.status, 502)
+  assert.ok(state.users['admin@example.test'])
+  assert.ok(state.workspaces['admin-1'])
   assert.equal(fs.existsSync(path.join(state.DATA_DIR, 'deleted-admin-accounts.json')), false)
 })
