@@ -379,7 +379,7 @@ function mountDevops(app, ctx) {
         method:'POST',
         headers:{'Content-Type':'application/json','X-Dev-Portal-Sync-Token':licenceToken},
         body:JSON.stringify({email}),
-        signal:AbortSignal.timeout(15000),
+        signal:AbortSignal.timeout(60000),
       })
       const payload=await response.json().catch(()=>({}))
       if(!response.ok || payload.ok!==true) return res.status(502).json({error:'Licence server did not confirm deletion. No app account was removed.',licenceServer:payload})
