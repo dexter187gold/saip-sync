@@ -93,7 +93,10 @@ function mountPortal(app, ctx) {
         portalNote: q.portalNote || q.portalDecisionReason || null,
       })),
       tickets: tickets.slice(0, 100).map((t) => {
-        const sharedFiles = []
+        const sharedFiles = (Array.isArray(row.publishedAttachments) ? row.publishedAttachments : [])
+          .filter((file) => String(file.ticketId) === String(t.id))
+          .slice(0, 20)
+          .map((file) => ({ id: file.id, name: file.name, mime: file.mime, size: file.size, dataUrl: file.dataUrl, sharedByBusiness: true }))
         for (const file of [...(Array.isArray(t.photos) ? t.photos : []), ...(Array.isArray(t.attachments) ? t.attachments : [])]) {
           if (attachmentBudget >= 2000000) break
           if (!file || !file.dataUrl) continue
@@ -232,6 +235,47 @@ function mountPortal(app, ctx) {
       .filter(([, v]) => v.userId === uid)
       .map(([token, v]) => ({ token, ...v, url: spaOrigin ? `${spaOrigin}/portal/${token}` : `${base}/p/${token}` }))
     res.json({ ok: true, portals: list })
+  })
+
+  // Business owner explicitly publishes selected job-card files for one client portal.
+  app.post('/api/portal/publish/:token', auth, (req, res) => {
+    const resolved = resolveToken(req.params.token)
+    if (resolved.error) return res.status(resolved.status || 404).json({ error: resolved.error })
+    const { row } = resolved
+    if (String(row.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Portal link belongs to another workspace' })
+    const ws = ownerWorkspace(row.userId)
+    const tickets = (ws?.data?.tickets || []).filter((t) => String(t.clientId) === String(row.clientId))
+    const allowedTickets = new Set(tickets.map((t) => String(t.id)))
+    const files = Array.isArray(req.body?.attachments) ? req.body.attachments : []
+    if (!files.length || files.length > 20) return res.status(400).json({ error: 'Select between 1 and 20 files' })
+    const existing = Array.isArray(row.publishedAttachments) ? row.publishedAttachments : []
+    const next = [...existing]
+    let addedBytes = 0
+    for (const file of files) {
+      const ticketId = String(file.ticketId || '')
+      const dataUrl = String(file.dataUrl || '')
+      const match = dataUrl.match(/^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/)
+      if (!allowedTickets.has(ticketId)) return res.status(403).json({ error: 'A selected job does not belong to this customer' })
+      if (!match) return res.status(400).json({ error: 'Invalid attachment data' })
+      const bytes = Math.floor(match[2].length * 0.75)
+      if (bytes > 2500000) return res.status(413).json({ error: 'Each shared file must be 2.5 MB or smaller' })
+      addedBytes += bytes
+      if (addedBytes > 8000000) return res.status(413).json({ error: 'Share up to 8 MB per upload' })
+      const id = String(file.id || crypto.randomUUID())
+      const safeName = String(file.name || 'Job attachment').replace(/[\\/\\r\\n]/g, '_').slice(0, 120)
+      const mime = match[1].toLowerCase()
+      if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain'].includes(mime)) {
+        return res.status(415).json({ error: 'Only PDF, JPG, PNG, WebP and text files can be shared' })
+      }
+      const idx = next.findIndex((x) => String(x.id) === id && String(x.ticketId) === ticketId)
+      const saved = { id, ticketId, name: safeName, mime, size: bytes, dataUrl, publishedAt: new Date().toISOString() }
+      if (idx >= 0) next[idx] = saved
+      else next.push(saved)
+    }
+    if (next.length > 100) return res.status(413).json({ error: 'This portal has reached its shared-file limit' })
+    row.publishedAttachments = next
+    savePortals(portals)
+    res.json({ ok: true, published: files.length, total: next.length })
   })
 
   app.post('/api/portal/revoke', auth, (req, res) => {
